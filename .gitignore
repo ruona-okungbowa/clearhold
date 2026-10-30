@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# aged sandbox holds from the money spike
+scripts/.aged-holds.json

@@ -41,7 +41,7 @@ async function accessToken(): Promise<string> {
   return access_token;
 }
 
-async function get<T>(path: string): Promise<T> {
+export async function get<T>(path: string): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     const res = await fetch(`${BASE_URL}${path}`, {
       headers: { Authorization: `Bearer ${await accessToken()}` },
@@ -60,6 +60,31 @@ async function get<T>(path: string): Promise<T> {
     }
     throw new PayPalApiError(res.status, path, await res.text());
   }
+}
+
+// Asks PayPal whether a webhook delivery is genuine. `rawBody` goes in byte for byte: re-serialising
+// the event can change it and fail the check.
+export async function verifyWebhookSignature(
+  headers: Headers,
+  rawBody: string,
+  webhookId: string,
+): Promise<{ verified: boolean; debugId: string | null }> {
+  const h = (name: string) => JSON.stringify(headers.get(name) ?? '');
+  const body =
+    `{"auth_algo":${h('paypal-auth-algo')},"cert_url":${h('paypal-cert-url')},` +
+    `"transmission_id":${h('paypal-transmission-id')},"transmission_sig":${h('paypal-transmission-sig')},` +
+    `"transmission_time":${h('paypal-transmission-time')},"webhook_id":${JSON.stringify(webhookId)},` +
+    `"webhook_event":${rawBody}}`;
+  const path = '/v1/notifications/verify-webhook-signature';
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${await accessToken()}`, 'Content-Type': 'application/json' },
+    body,
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new PayPalApiError(res.status, path, await res.text());
+  const { verification_status } = (await res.json()) as { verification_status: string };
+  return { verified: verification_status === 'SUCCESS', debugId: res.headers.get('paypal-debug-id') };
 }
 
 // `path` must already carry whatever flag makes the endpoint report `total_pages`.

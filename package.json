@@ -6,9 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "spike:money": "tsx --env-file=.env.local scripts/spike-money.ts"
   },
   "dependencies": {
+    "@paypal/paypal-server-sdk": "2.5.0",
     "ag-grid-community": "36.2.0",
     "ag-grid-react": "36.2.0",
     "ag-studio": "3.0.0",
@@ -25,6 +27,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
     "tailwindcss": "^4",
+    "tsx": "4.20.6",
     "typescript": "^5"
   }
 }
