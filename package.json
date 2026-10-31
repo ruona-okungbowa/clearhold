@@ -1,5 +1,5 @@
 {
-  "name": "ag-paypal-demo",
+  "name": "clearhold",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -7,17 +7,29 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "spike:money": "tsx --env-file=.env.local scripts/spike-money.ts"
+    "spike:money": "tsx --env-file=.env.local scripts/spike-money.ts",
+    "postinstall": "prisma generate",
+    "db:seed": "tsx --env-file=.env.local scripts/seed-holds.ts",
+    "check:axis": "tsx scripts/check-axis-ticks.ts",
+    "check:day3": "tsx --env-file=.env.local scripts/check-day3.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.94",
+    "@neondatabase/serverless": "^1.2.0",
     "@paypal/paypal-server-sdk": "2.5.0",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
+    "@vercel/blob": "^2.8.2",
     "ag-grid-community": "36.2.0",
     "ag-grid-react": "36.2.0",
     "ag-studio": "3.0.0",
     "ag-studio-react": "3.0.0",
+    "ai": "^7.0.159",
+    "jose": "^6.2.14",
     "next": "16.3.6",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -26,6 +38,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.6",
+    "prisma": "7.10.1",
     "tailwindcss": "^4",
     "tsx": "4.20.6",
     "typescript": "^5"

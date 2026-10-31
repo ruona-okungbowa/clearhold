@@ -1,6 +1,7 @@
 // Money service: the only code that moves deposit money. Orders v2 (AUTHORIZE) and Payments v2
 // through @paypal/paypal-server-sdk. Every money call carries a caller-chosen PayPal-Request-Id, so
-// a retry with the same id is a replay, never a second charge, and every call logs its paypal-debug-id.
+// a retry with the same id is a replay, never a second charge, and every call is written to the AuditEvent
+// table with its paypal-debug-id. Captures also need a signed approval (see capture).
 // Server-side only: it reads the client secret from the environment.
 
 import {
@@ -12,6 +13,8 @@ import {
   PaymentsController,
   type ApiResponse,
 } from '@paypal/paypal-server-sdk';
+import { claimApproval, releaseApproval } from './approval';
+import { audit } from './audit';
 
 let controllers: { orders: OrdersController; payments: PaymentsController } | undefined;
 
@@ -46,16 +49,25 @@ export type CallLog = { op: string; requestId?: string; status: number; debugId?
 // Extra sinks for each call log (the spike collects debug ids per check).
 export const callListeners: ((entry: CallLog) => void)[] = [];
 
-// shortcut: logs to stdout only, move to the audit table once the database exists.
-function logCall(entry: CallLog) {
+async function logCall(entry: CallLog, latencyMs: number) {
   console.log(`[paypal] ${JSON.stringify(entry)}`);
   for (const listen of callListeners) listen(entry);
+  await audit({
+    actor: 'paypal',
+    type: entry.op,
+    summary: `${entry.op} ${entry.status}${entry.issue ? ` ${entry.issue}` : ''}`,
+    status: entry.status,
+    paypalDebugId: entry.debugId,
+    idempotencyKey: entry.requestId,
+    latencyMs,
+  });
 }
 
 async function call<T>(op: string, requestId: string | undefined, run: () => Promise<ApiResponse<T>>): Promise<T> {
+  const started = Date.now();
   try {
     const res = await run();
-    logCall({ op, requestId, status: res.statusCode, debugId: res.headers['paypal-debug-id'] });
+    await logCall({ op, requestId, status: res.statusCode, debugId: res.headers['paypal-debug-id'] }, Date.now() - started);
     return res.result;
   } catch (err) {
     if (!(err instanceof ApiError)) throw err;
@@ -66,7 +78,7 @@ async function call<T>(op: string, requestId: string | undefined, run: () => Pro
       issue = parsed.details?.[0]?.issue ?? parsed.name;
     } catch {}
     const debugId = err.headers?.['paypal-debug-id'];
-    logCall({ op, requestId, status: err.statusCode, debugId, issue });
+    await logCall({ op, requestId, status: err.statusCode, debugId, issue }, Date.now() - started);
     throw new MoneyError(op, err.statusCode, issue, debugId, body);
   }
 }
@@ -101,16 +113,33 @@ export function authorizeOrder(requestId: string, orderId: string) {
   );
 }
 
-// finalCapture false keeps the rest of the hold open (fee at pick-up); true releases what is left.
-export function capture(requestId: string, authorizationId: string, amount: string, finalCapture: boolean) {
-  return call('capture', requestId, () =>
-    api().payments.captureAuthorizedPayment({
-      authorizationId,
-      paypalRequestId: requestId,
-      prefer: full,
-      body: { amount: gbp(amount), finalCapture },
-    }),
-  );
+// Every capture needs a signed approval (lib/approval.ts): valid, unexpired, unused, and covering the amount.
+// The approval names the hold and whether this is the final capture: false keeps the rest of the hold open
+// (fee at pick-up); true releases what is left. The request id comes from the approval, so a retry after a
+// PayPal failure replays instead of charging twice.
+export async function capture(approvalToken: string, amount: string) {
+  let approval;
+  try {
+    approval = await claimApproval(approvalToken, amount);
+  } catch (err) {
+    await audit({ actor: 'system', type: 'capture.refused', summary: `Refused £${amount}: ${err instanceof Error ? err.message : err}` });
+    throw err;
+  }
+  const { id, authorizationId, finalCapture } = approval;
+  try {
+    const result = await call('capture', `capture-${id}`, () =>
+      api().payments.captureAuthorizedPayment({
+        authorizationId,
+        paypalRequestId: `capture-${id}`,
+        prefer: full,
+        body: { amount: gbp(amount), finalCapture },
+      }),
+    );
+    return { ...result, approvalId: id, authorizationId, finalCapture };
+  } catch (err) {
+    await releaseApproval(id);
+    throw err;
+  }
 }
 
 export function voidHold(requestId: string, authorizationId: string) {

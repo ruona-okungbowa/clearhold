@@ -1,0 +1,129 @@
+// Holds (PayPal authorizations) against hires, plus saved AG Studio layouts.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Hire {
+  id             String          @id @default(cuid())
+  hireRef        String          @unique // e.g. "LH-HAL-0042"
+  branch         String // e.g. "Halifax"
+  itemRef        String // the garment
+  feeGBP         Decimal         @db.Decimal(10, 2)
+  depositGBP     Decimal         @db.Decimal(10, 2)
+  startAt        DateTime
+  dueBackAt      DateTime
+  returnedAt     DateTime?
+  status         String // booked, out, returned, settled
+  seeded         Boolean         @default(false) // seeded history vs live sandbox hire
+  authorizations Authorization[]
+  photos         Photo[]
+  findings       Finding[]
+  createdAt      DateTime        @default(now())
+}
+
+// One condition photo per hire, stage and angle; the image itself lives in private Vercel Blob.
+model Photo {
+  id          String   @id @default(cuid())
+  hireId      String
+  hire        Hire     @relation(fields: [hireId], references: [id])
+  stage       String // pickup, return
+  angle       String // front, back, left-sleeve, right-sleeve, collar-cuffs, care-label
+  pathname    String // private Blob pathname
+  contentType String
+  sha256      String
+  serverAt    DateTime // server clock when the upload landed, never the phone's
+
+  @@unique([hireId, stage, angle])
+}
+
+// The inspector's output after code settlement. Re-running the inspector replaces a hire's findings.
+model Finding {
+  id            String   @id @default(cuid())
+  hireId        String
+  hire          Hire     @relation(fields: [hireId], references: [id])
+  angle         String
+  kind          String // new_damage, known_mark, wear, dirt, missing_part, none
+  description   String
+  clauseId      String?
+  severity      String?
+  box           Json?
+  pickupPhotoId String?
+  returnPhotoId String?
+  knownMarkId   String?
+  confidence    Float
+  outcome       String // charge, owner_look, no_charge
+  reason        String // why settlement decided the outcome
+  proposedGBP   Decimal? @db.Decimal(10, 2)
+  model         String
+  promptVersion String
+  createdAt     DateTime @default(now())
+}
+
+// A person's signed permission to capture up to maxGBP from one hold, once, before expiresAt.
+model Approval {
+  id              String    @id // the JWT's jti
+  authorizationId String
+  maxGBP          Decimal   @db.Decimal(10, 2)
+  finalCapture    Boolean
+  approver        String
+  expiresAt       DateTime
+  token           String // the signed JWT
+  usedAt          DateTime?
+  createdAt       DateTime  @default(now())
+}
+
+model Capture {
+  id              String   @id // PayPal's capture id
+  authorizationId String
+  approvalId      String   @unique
+  amountGBP       Decimal  @db.Decimal(10, 2)
+  finalCapture    Boolean
+  status          String
+  createdAt       DateTime @default(now())
+}
+
+// Every PayPal call, model call and human approval.
+model AuditEvent {
+  id             String   @id @default(cuid())
+  at             DateTime @default(now())
+  actor          String // paypal, ai, human, system
+  type           String
+  hireRef        String?
+  summary        String
+  status         Int?
+  paypalDebugId  String?
+  idempotencyKey String?
+  model          String?
+  promptVersion  String?
+  tokens         Int?
+  latencyMs      Int?
+
+  @@index([hireRef])
+}
+
+model Authorization {
+  id           String   @id // PayPal's authorization id
+  hireId       String
+  hire         Hire     @relation(fields: [hireId], references: [id])
+  parentId     String? // the original hold, if this one came from a reauthorisation
+  amountGBP    Decimal  @db.Decimal(10, 2)
+  status       String // CREATED, PARTIALLY_CAPTURED, CAPTURED, VOIDED, EXPIRED
+  createdAt    DateTime // when PayPal authorised it
+  honourEndsAt DateTime // createdAt + 3 days
+  expiresAt    DateTime // PayPal's expiration_time (about 29 days)
+  updatedAt    DateTime @updatedAt
+}
+
+// One row per saved Studio report, holding api.getState() as it came back.
+model StudioLayout {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  state     Json
+  updatedAt DateTime @updatedAt
+}

@@ -19,6 +19,10 @@ import {
   type CallLog,
 } from '../lib/money';
 import { get } from '../lib/paypal';
+import { ApprovalError, createApproval } from '../lib/approval';
+
+const approve = async (authorizationId: string, maxGBP: string, finalCapture: boolean) =>
+  (await createApproval({ authorizationId, maxGBP, finalCapture, approver: 'spike' })).token;
 
 const FEE = '28.00';
 const HOLD_TOTAL = '88.00'; // £28 fee + £60 deposit
@@ -96,6 +100,7 @@ async function main() {
   let authA = '';
   let authB = '';
   let feeCaptureA = '';
+  let feeTokenA = '';
   // Resources each webhook (check 8) should mention.
   const expected: [event: string, resourceId: string][] = [];
 
@@ -133,20 +138,26 @@ async function main() {
   if (!authorized) return;
 
   await check(3, `Capture £${FEE}, final_capture false: auth PARTIALLY_CAPTURED`, async () => {
-    const c = await capture(rid('a-fee'), authA, FEE, false);
+    feeTokenA = await approve(authA, FEE, false);
+    const c = await capture(feeTokenA, FEE);
     feeCaptureA = c.id!;
     expected.push(['PAYMENT.CAPTURE.COMPLETED', c.id!]);
     const a = await getAuthorization(authA);
     return { ok: c.status === 'COMPLETED' && a.status === 'PARTIALLY_CAPTURED', detail: `capture ${c.id} ${c.status}; auth ${a.status}` };
   });
 
-  await check(4, 'Replay that capture with the same PayPal-Request-Id: no duplicate', async () => {
-    const c = await capture(rid('a-fee'), authA, FEE, false);
-    return { ok: !!feeCaptureA && c.id === feeCaptureA, detail: `replay returned ${c.id} (first was ${feeCaptureA || 'none'})` };
+  // Since Day 3 every capture spends a single-use approval, so a replay is refused before it reaches PayPal.
+  await check(4, 'Replay that capture with the same approval: refused, no duplicate', async () => {
+    try {
+      const c = await capture(feeTokenA, FEE);
+      return { ok: false, detail: `replay went through as ${c.id} (first was ${feeCaptureA || 'none'})` };
+    } catch (err) {
+      return { ok: err instanceof ApprovalError, detail: message(err) };
+    }
   });
 
   await check(5, `Second capture £${DAMAGES}, final_capture true: rest released`, async () => {
-    const c = await capture(rid('a-damages'), authA, DAMAGES, true);
+    const c = await capture(await approve(authA, DAMAGES, true), DAMAGES);
     expected.push(['PAYMENT.CAPTURE.COMPLETED', c.id!]);
     const a = await getAuthorization(authA);
     return { ok: c.status === 'COMPLETED' && a.status === 'CAPTURED', detail: `capture ${c.id} ${c.status}; auth ${a.status} (£36 left uncaptured)` };
@@ -155,7 +166,7 @@ async function main() {
   // Hold B takes its fee first, so check 7 hits a part-captured hold and check 6 voids after a partial capture.
   let feeB: string;
   try {
-    const c = await capture(rid('b-fee'), authB, FEE, false);
+    const c = await capture(await approve(authB, FEE, false), FEE);
     feeB = `${c.id} ${c.status}`;
     expected.push(['PAYMENT.CAPTURE.COMPLETED', c.id!]);
   } catch (err) {
@@ -252,7 +263,7 @@ async function agedCreate() {
     h.authId ??= authorizationOf(await authorizeOrder(`aged-auth-${h.orderId}`, h.orderId)).id!;
     saveHolds(holds);
     if (h.role === 'fee') {
-      h.feeCaptureId = (await capture(`aged-fee-${h.authId}`, h.authId, FEE, false)).id!;
+      h.feeCaptureId = (await capture(await approve(h.authId, FEE, false), FEE)).id!;
       saveHolds(holds);
     }
   }

@@ -1,5 +1,5 @@
 // PayPal REST client: every call this demo makes to PayPal goes through here. It covers
-// catalog products, billing plans, invoicing, Transaction Search and balances, with plain
+// catalog products, billing plans, invoicing, Transaction Search, balances and disputes, with plain
 // fetch and no SDK. Server-side only: it reads the client secret from the environment.
 
 const BASE_URL = 'https://api-m.sandbox.paypal.com';
@@ -245,4 +245,34 @@ export type Balances = {
 
 export function getBalances(): Promise<Balances> {
   return get<Balances>('/v1/reporting/balances');
+}
+
+// --- Disputes ----------------------------------------------------------------------
+
+export type Dispute = {
+  dispute_id: string;
+  create_time?: string;
+  update_time?: string;
+  reason?: string;
+  status?: string;
+  dispute_state?: string;
+  dispute_amount?: Money;
+  dispute_life_cycle_stage?: string;
+  dispute_channel?: string;
+  outcome?: string;
+  seller_response_due_date?: string;
+};
+
+// Disputes page by cursor: follow the `next` link until there is none.
+export async function listDisputes(): Promise<Dispute[]> {
+  const disputes: Dispute[] = [];
+  let path: string | undefined = '/v1/customer/disputes?page_size=50';
+  while (path) {
+    const res: { items?: Dispute[]; links?: { rel: string; href: string }[] } = await get(path);
+    disputes.push(...(res.items ?? []));
+    const next = res.links?.find((l) => l.rel === 'next')?.href;
+    const url = next ? new URL(next, BASE_URL) : undefined;
+    path = url && url.pathname + url.search;
+  }
+  return disputes;
 }
