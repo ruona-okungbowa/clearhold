@@ -16,10 +16,15 @@ import {
   type AgDefaultRegistry,
 } from "ag-studio";
 import { AgStudio, AgStudioProvider, createWidgets } from "ag-studio-react";
+import { evidencePairWidget } from "@/components/studio/EvidencePair";
 import { holdTimelineWidget } from "@/components/studio/HoldTimeline";
 
 interface ControlRoomRegistry extends AgBaseRegistry {
-  widgets: readonly (AgDefaultWidgetDefinition | typeof holdTimelineWidget)[];
+  widgets: readonly (
+    | AgDefaultWidgetDefinition
+    | typeof holdTimelineWidget
+    | typeof evidencePairWidget
+  )[];
 }
 import { saveLayout } from "./actions";
 
@@ -29,7 +34,30 @@ if (process.env.NODE_ENV !== "production") {
 
 type Row = Record<string, unknown>;
 
-// First visit, before anything is saved: a built-in grid of every hold with its hire.
+// Listed, not inferred: inference drops a column with no values, and most hires have no setGBP or setBy.
+const FINDING_FIELDS = [
+  ...[
+    "id",
+    "hireId",
+    "angle",
+    "kind",
+    "description",
+    "clauseId",
+    "severity",
+    "box",
+    "pickupPhotoId",
+    "returnPhotoId",
+    "outcome",
+    "reason",
+    "setBy",
+  ].map((id) => ({ id, format: "textFormat" as const })),
+  ...["confidence", "proposedGBP", "setGBP"].map((id) => ({
+    id,
+    format: "decimalFormat" as const,
+  })),
+];
+
+// First visit, before anything is saved: a built-in grid of every hold with its hire, and the evidence beside it.
 const DEFAULT_STATE = {
   pages: [
     {
@@ -51,8 +79,15 @@ const DEFAULT_STATE = {
             ],
           },
         },
+        2: {
+          type: "evidence-pair",
+          dataMapping: evidencePairWidget.defaultState!.dataMapping,
+        },
       },
-      widgetLayout: { 1: { xTrack: 0, yTrack: 0, xSpan: 24, ySpan: 16 } },
+      widgetLayout: {
+        1: { xTrack: 0, yTrack: 0, xSpan: 10, ySpan: 40 },
+        2: { xTrack: 10, yTrack: 0, xSpan: 14, ySpan: 40 },
+      },
     },
   ],
   selectedPageId: "holds",
@@ -60,18 +95,23 @@ const DEFAULT_STATE = {
 
 const widgets = (config: AgWidgetsConfig<AgDefaultRegistry>) =>
   createWidgets<ControlRoomRegistry>({
-    additionalTypes: [holdTimelineWidget],
-    menu: [...config.menu, { label: "Holds", widgetIds: ["hold-timeline"] }],
+    additionalTypes: [holdTimelineWidget, evidencePairWidget],
+    menu: [
+      ...config.menu,
+      { label: "Holds", widgetIds: ["hold-timeline", "evidence-pair"] },
+    ],
   });
 
 export function ControlRoom({
   holds,
   hires,
+  findings,
   savedState,
   licenseKey,
 }: {
   holds: Row[];
   hires: Row[];
+  findings: Row[];
   savedState: AgReportState<ControlRoomRegistry> | null;
   licenseKey?: string;
 }) {
@@ -85,6 +125,7 @@ export function ControlRoom({
       sources: [
         { id: "holds", data: holds },
         { id: "hires", data: hires },
+        { id: "findings", data: findings, fields: FINDING_FIELDS },
       ],
       relationships: [
         {
@@ -93,9 +134,15 @@ export function ControlRoom({
           target: { tableId: "hires", fieldId: "id" },
           type: "many-to-one",
         },
+        {
+          id: "findings-hires",
+          source: { tableId: "findings", fieldId: "hireId" },
+          target: { tableId: "hires", fieldId: "id" },
+          type: "many-to-one",
+        },
       ],
     }),
-    [holds, hires],
+    [holds, hires, findings],
   );
   // Read once by Studio on mount.
   const [initialState] = useState(() => savedState ?? DEFAULT_STATE);
