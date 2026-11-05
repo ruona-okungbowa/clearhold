@@ -6,12 +6,12 @@ import assert from 'node:assert/strict';
 import { ApprovalError, claimApproval, createApproval } from '../lib/approval';
 import { auditScope } from '../lib/audit';
 import { db } from '../lib/db';
-import { settle, type AngleFinding } from '../lib/inspector';
+import { clampPence, isNewMark, personPence, settle, type AngleFinding } from '../lib/inspector';
 import { capture } from '../lib/money';
-import { ITEMS } from '../lib/schedule';
+import { CLAUSES } from '../lib/schedule';
 
 const TAG = 'CHECK-DAY3';
-const knownMarks = ITEMS['BLZ-NAVY-40R'].knownMarks;
+const knownMarks = [{ id: 'KM-38-CUFF', description: 'Faint mark on the left cuff', firstSeen: 'hire #38' }];
 const photoIds = { front: { pickup: 'P1', return: 'R1' }, 'left-sleeve': { pickup: 'P3', return: 'R3' } };
 
 const finding = (over: Partial<AngleFinding>): AngleFinding => ({
@@ -56,6 +56,35 @@ function checkSettlement() {
   assert.deepEqual(capped.map((f) => f.proposedGBP), [24, 6, null]);
   assert.deepEqual(capped.map((f) => f.outcome), ['charge', 'charge', 'owner_look']);
   assert.equal(one({ clauseId: 'R1', severity: 'moderate' }).proposedGBP, 60); // £140 replacement capped at £60
+
+  // Unrecorded pick-up marks: logged only if confident and citing the real photo pair, and never priced.
+  const mark = { kind: 'known_mark', clauseId: null, severity: null } as const;
+  assert.deepEqual([one(mark).outcome, one(mark).proposedGBP, isNewMark(one(mark))], ['owner_look', null, true]);
+  assert.equal(isNewMark(one({ ...mark, confidence: 0.6 })), false);
+  assert.equal(isNewMark(one({ ...mark, returnPhotoId: 'R3' })), false);
+  assert.equal(isNewMark(one({})), false);
+
+  // A person's amount: into the band, then down to what the hold has left.
+  const [s1, r1] = [CLAUSES.find((c) => c.id === 'S1')!, CLAUSES.find((c) => c.id === 'R1')!];
+  assert.equal(clampPence(2500, s1, 6000), 2500);
+  assert.equal(clampPence(9999, s1, 6000), 3000);
+  assert.equal(clampPence(500, s1, 6000), 1800);
+  assert.equal(clampPence(9999, s1, 1000), 1000);
+  assert.equal(clampPence(100, r1, 6000), 6000); // the plan's tear: £140 replacement, £60 hold
+
+  // The AI's charge can only go down, even below the band; an owner-look amount is clamped; blank undoes either.
+  assert.equal(personPence('charge', 2400, s1, 1000, 6000), 1000);
+  assert.equal(personPence('charge', 2400, s1, 9999, 6000), null); // can't raise: stays the AI's amount
+  assert.equal(personPence('charge', 2400, s1, 0, 6000), 0);
+  assert.equal(personPence('charge', 2400, s1, null, 6000), null);
+  assert.equal(personPence('owner_look', 0, s1, 9999, 6000), 3000);
+  assert.equal(personPence('owner_look', 0, s1, 0, 6000), null);
+  assert.equal(personPence('owner_look', 0, s1, null, 6000), null);
+}
+
+async function checkMarks() {
+  const seeded = await db.itemMark.findUnique({ where: { id: 'KM-38-CUFF' } });
+  assert.equal(seeded?.itemRef, 'BLZ-NAVY-40R');
 }
 
 async function refused(run: () => Promise<unknown>, why: RegExp) {
@@ -86,6 +115,8 @@ async function checkGate() {
 async function main() {
   checkSettlement();
   console.log('settlement: ok');
+  await checkMarks();
+  console.log('item marks: ok');
   await auditScope.run(TAG, checkGate);
   console.log('approval gate: ok');
 }

@@ -24,7 +24,23 @@ model Hire {
   authorizations Authorization[]
   photos         Photo[]
   findings       Finding[]
+  marks          ItemMark[]
   createdAt      DateTime        @default(now())
+}
+
+// A mark a garment already carries, never charged. hireId is set when the inspector logged it from a hire's
+// pick-up photo; null for marks recorded before Clearhold.
+model ItemMark {
+  id          String   @id // e.g. "KM-38-CUFF"
+  itemRef     String
+  description String
+  firstSeen   String // e.g. "hire #38"
+  hireId      String?
+  hire        Hire?    @relation(fields: [hireId], references: [id])
+  photoId     String? // the pick-up photo that shows it
+  createdAt   DateTime @default(now())
+
+  @@index([itemRef])
 }
 
 // One condition photo per hire, stage and angle; the image itself lives in private Vercel Blob.
@@ -60,6 +76,8 @@ model Finding {
   outcome       String // charge, owner_look, no_charge
   reason        String // why settlement decided the outcome
   proposedGBP   Decimal? @db.Decimal(10, 2)
+  setGBP        Decimal? @db.Decimal(10, 2) // a person's amount on an owner-look finding, kept apart from the AI's
+  setBy         String?
   model         String
   promptVersion String
   createdAt     DateTime @default(now())

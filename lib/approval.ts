@@ -81,5 +81,15 @@ export async function claimApproval(token: string, amountGBP: string) {
   return { id: c.jti, authorizationId: c.sub, finalCapture: c.final };
 }
 
+// A signed approval covers the total when it was signed; once the total can change it must not stay capturable.
+export async function cancelOpenApprovals(authorizationId: string) {
+  const now = new Date();
+  const { count } = await db.approval.updateMany({
+    where: { authorizationId, finalCapture: true, usedAt: null, expiresAt: { gt: now } },
+    data: { expiresAt: now },
+  });
+  if (count) await audit({ actor: 'system', type: 'approval.cancelled', summary: `${count} open approval(s) cancelled: the findings changed` });
+}
+
 // Hands an approval back after PayPal refused the capture, so a retry replays the same request id.
 export const releaseApproval = (id: string) => db.approval.update({ where: { id }, data: { usedAt: null } });

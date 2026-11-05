@@ -13,14 +13,14 @@ const gbp = (n: number) => `£${n.toFixed(2)}`;
 export default async function HirePage({ params }: PageProps<'/hire/[hireRef]'>) {
   const { hireRef } = await params;
   const hold = await holdOf(hireRef).catch((err: Error) => (err.message.startsWith('No hold') ? notFound() : Promise.reject(err)));
-  const { hire, auth, captures, capturedGBP, remainingGBP } = hold;
+  const { hire, auth, captures, capturedGBP, remainingGBP, heldAtBookingGBP } = hold;
   const [photos, findings, events] = await Promise.all([
     db.photo.groupBy({ by: ['stage'], where: { hireId: hire.id }, _count: true }),
     db.finding.count({ where: { hireId: hire.id } }),
     db.auditEvent.findMany({ where: { hireRef }, orderBy: { at: 'asc' } }),
   ]);
   const photoCount = (stage: string) => photos.find((p) => p.stage === stage)?._count ?? 0;
-  const released = captures.some((c) => c.finalCapture);
+  const released = hire.status === 'settled';
 
   return (
     <main>
@@ -34,7 +34,7 @@ export default async function HirePage({ params }: PageProps<'/hire/[hireRef]'>)
         <li>
           PayPal authorization {auth.id}: <strong>{auth.status}</strong>
         </li>
-        <li>Held at booking: {gbp(Number(auth.amountGBP))}</li>
+        <li>Held at booking: {gbp(heldAtBookingGBP)}</li>
         <li>Captured: {gbp(capturedGBP)}</li>
         <li>{released ? `Released: ${gbp(remainingGBP)}` : `Still held: ${gbp(remainingGBP)}`}</li>
         <li>Honour period ends {auth.honourEndsAt.toLocaleString('en-GB')}; expires {auth.expiresAt.toLocaleString('en-GB')}</li>

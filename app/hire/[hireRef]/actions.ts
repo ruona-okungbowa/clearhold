@@ -1,13 +1,13 @@
 'use server';
 
 import { refresh } from 'next/cache';
-import { createApproval } from '@/lib/approval';
-import { auditScope } from '@/lib/audit';
+import { cancelOpenApprovals, createApproval, pence } from '@/lib/approval';
+import { audit, auditScope } from '@/lib/audit';
 import { db } from '@/lib/db';
 import { Prisma } from '@/lib/generated/prisma/client';
-import { captureApproved, holdOf } from '@/lib/hold';
-import { inspect, MODEL, PROMPT_VERSION } from '@/lib/inspector';
-import { ITEMS } from '@/lib/schedule';
+import { amountPence, captureApproved, holdOf, releaseHire } from '@/lib/hold';
+import { inspect, isNewMark, MODEL, personPence, PROMPT_VERSION } from '@/lib/inspector';
+import { CLAUSES } from '@/lib/schedule';
 
 // shortcut: no sign-in yet, so every approval is Priya's; use the signed-in staff member once auth exists.
 const STAFF = 'Priya (H-01)';
@@ -28,11 +28,26 @@ export async function handOver(hireRef: string) {
 
 export async function runInspector(hireRef: string) {
   await inScope(hireRef, async () => {
-    const { hire, remainingGBP } = await holdOf(hireRef);
+    const { hire, auth, remainingGBP } = await holdOf(hireRef);
     if (hire.status === 'settled') throw new Error(`${hireRef} is already settled`);
-    const photos = await db.photo.findMany({ where: { hireId: hire.id } });
-    const settled = await inspect(photos, ITEMS[hire.itemRef]?.knownMarks ?? [], remainingGBP);
+    await cancelOpenApprovals(auth.id);
+    const [photos, marks] = await Promise.all([
+      db.photo.findMany({ where: { hireId: hire.id } }),
+      db.itemMark.findMany({ where: { itemRef: hire.itemRef } }),
+    ]);
+    // A re-run must judge the photos afresh, not excuse a mark on this hire's own earlier say-so.
+    const settled = await inspect(photos, marks.filter((m) => m.hireId !== hire.id), remainingGBP);
+    const newMarks = settled.filter(isNewMark).map((f, i) => ({
+      id: `KM-${hireRef}-${f.angle}-${i + 1}`,
+      itemRef: hire.itemRef,
+      description: f.description,
+      firstSeen: `hire ${hireRef}`,
+      hireId: hire.id,
+      photoId: f.pickupPhotoId,
+    }));
     await db.$transaction([
+      db.itemMark.deleteMany({ where: { hireId: hire.id } }),
+      db.itemMark.createMany({ data: newMarks }),
       db.finding.deleteMany({ where: { hireId: hire.id } }),
       db.finding.createMany({
         data: settled.map((f) => ({
@@ -55,16 +70,54 @@ export async function runInspector(hireRef: string) {
         })),
       }),
     ]);
+    if (newMarks.length) await audit({ actor: 'ai', type: 'mark.logged', summary: newMarks.map((m) => `${m.id}: ${m.description}`).join('; ') });
   });
 }
 
-// A signed approval for the charged findings' total, as the final capture. Owner-look findings carry no amount.
+// A person lowers the AI's charge or prices an owner-look finding (lib/inspector.ts personPence holds the rules),
+// against what the other findings leave of the hold. Nothing moves until the total is signed in approveCharges.
+export async function setAmount(hireRef: string, findingId: string, form: FormData) {
+  await inScope(hireRef, async () => {
+    const { hire, auth, remainingGBP } = await holdOf(hireRef);
+    if (hire.status === 'settled') throw new Error(`${hireRef} is already settled`);
+    const findings = await db.finding.findMany({ where: { hireId: hire.id } });
+    const finding = findings.find((f) => f.id === findingId);
+    if (finding?.outcome !== 'owner_look' && finding?.outcome !== 'charge') throw new Error('Only a charge or an owner-look finding on this hire can take an amount');
+    const clause = CLAUSES.find((c) => c.id === finding.clauseId);
+    if (!clause?.chargeable) throw new Error('This finding has no chargeable clause, so it cannot be priced');
+
+    const raw = String(form.get('amountGBP') ?? '').trim();
+    const others = findings.filter((f) => f.id !== findingId).reduce((sum, f) => sum + amountPence(f), 0);
+    const leftPence = Math.round(remainingGBP * 100) - others;
+    const proposedPence = Math.round(Number(finding.proposedGBP ?? 0) * 100);
+    const setPence = personPence(finding.outcome, proposedPence, clause, raw ? pence(raw) : null, leftPence);
+    if (finding.outcome === 'owner_look' && setPence !== null && setPence <= 0) throw new Error('The other findings already use up the remaining hold');
+
+    await cancelOpenApprovals(auth.id);
+    const setGBP = setPence === null ? null : (setPence / 100).toFixed(2);
+    await db.finding.update({ where: { id: findingId }, data: { setGBP, setBy: setGBP && STAFF } });
+    await audit({
+      actor: 'human',
+      type: 'finding.amount_set',
+      summary: setGBP
+        ? `${STAFF} set £${setGBP} on ${finding.angle} (${clause.id}, ${finding.outcome}); entered £${raw}, £${(leftPence / 100).toFixed(2)} of the hold was free`
+        : `${STAFF} cleared the amount on ${finding.angle} (${clause.id})`,
+    });
+  });
+}
+
+// One tap: nothing to charge, so the rest of the hold goes back.
+export async function releaseHold(hireRef: string) {
+  await inScope(hireRef, () => releaseHire(hireRef, STAFF));
+}
+
+// A signed approval for the total of the AI's charges and any amounts a person set, as the final capture.
 export async function approveCharges(hireRef: string) {
   await inScope(hireRef, async () => {
     const { hire, auth, remainingGBP } = await holdOf(hireRef);
     if (hire.status === 'settled') throw new Error(`${hireRef} is already settled`);
-    const charged = await db.finding.findMany({ where: { hireId: hire.id, outcome: 'charge' } });
-    const totalPence = charged.reduce((sum, f) => sum + Math.round(Number(f.proposedGBP) * 100), 0);
+    const findings = await db.finding.findMany({ where: { hireId: hire.id } });
+    const totalPence = findings.reduce((sum, f) => sum + amountPence(f), 0);
     if (totalPence <= 0) throw new Error('Nothing to approve: no finding carries a charge');
     if (totalPence > Math.round(remainingGBP * 100)) throw new Error('The findings total more than the remaining hold; run the inspector again');
     await createApproval({ authorizationId: auth.id, maxGBP: (totalPence / 100).toFixed(2), finalCapture: true, approver: STAFF });

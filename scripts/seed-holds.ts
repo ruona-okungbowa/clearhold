@@ -15,7 +15,7 @@ const DEPOSIT = 60;
 const HONOUR_DAYS = 3;
 const DAY = 86_400_000;
 
-type AgedHold = { role: 'fee' | 'untouched' | 'spare'; orderId: string; authId?: string };
+type AgedHold = { role: 'fee' | 'untouched' | 'spare'; orderId: string; authId?: string; feeCaptureId?: string };
 type PayPalAuthorization = { id: string; status: string; amount: Money; create_time: string; expiration_time: string };
 
 const BRANCHES = ['Halifax', 'Leeds', 'York'];
@@ -53,7 +53,8 @@ async function upsertHold(h: HoldSeed) {
   const { id: hireId } = await db.hire.upsert({
     where: { hireRef: h.hireRef },
     create: { hireRef: h.hireRef, ...hire },
-    update: hire,
+    // A live hire keeps its progress on a re-run; seeded history is reset.
+    update: h.seeded ? hire : { ...hire, status: undefined, returnedAt: undefined },
   });
   const auth = {
     hireId,
@@ -89,6 +90,11 @@ async function main() {
       createdAt,
       expiresAt: new Date(a.expiration_time),
     });
+    // The spike took these fees outside the app, so holdOf can't count them without a row here.
+    if (h.feeCaptureId) {
+      const capture = { authorizationId: a.id, approvalId: `spike-${h.feeCaptureId}`, amountGBP: FEE, finalCapture: false, status: 'COMPLETED' };
+      await db.capture.upsert({ where: { id: h.feeCaptureId }, create: { id: h.feeCaptureId, ...capture }, update: capture });
+    }
   }
 
   const now = new Date();

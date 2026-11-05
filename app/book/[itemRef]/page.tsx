@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { db } from '@/lib/db';
 import { AI_NOTICE, CLAUSES, ITEMS } from '@/lib/schedule';
 import { PayPalHold } from './paypal-hold';
 
@@ -11,6 +12,7 @@ export default async function BookPage({ params }: PageProps<'/book/[itemRef]'>)
   const { itemRef } = await params;
   const item = ITEMS[itemRef];
   if (!item) notFound();
+  const marks = await db.itemMark.findMany({ where: { itemRef }, orderBy: { createdAt: 'asc' } });
   const clientId = process.env.PAYPAL_CLIENT_ID;
 
   return (
@@ -55,7 +57,7 @@ export default async function BookPage({ params }: PageProps<'/book/[itemRef]'>)
           ))}
         </tbody>
       </table>
-      <p>Known marks already on this item are never charged: {item.knownMarks.map((m) => m.description).join('; ')}.</p>
+      {marks.length > 0 && <p>Known marks already on this item are never charged: {marks.map((m) => m.description).join('; ')}.</p>}
 
       <h2>How returns are checked</h2>
       <p>{AI_NOTICE}</p>

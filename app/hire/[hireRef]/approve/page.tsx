@@ -5,7 +5,7 @@ import { verifyApproval } from '@/lib/approval';
 import { db } from '@/lib/db';
 import { holdOf } from '@/lib/hold';
 import { ANGLES, CLAUSES } from '@/lib/schedule';
-import { approveCharges, settleHire } from '../actions';
+import { approveCharges, releaseHold, setAmount, settleHire } from '../actions';
 
 export const metadata: Metadata = { title: 'Approve charges' };
 
@@ -21,7 +21,7 @@ export default async function ApprovePage({ params }: PageProps<'/hire/[hireRef]
     db.approval.findMany({ where: { authorizationId: auth.id }, orderBy: { createdAt: 'asc' } }),
   ]);
   findings.sort((a, b) => (order.get(a.angle) ?? 9) - (order.get(b.angle) ?? 9));
-  const totalGBP = findings.filter((f) => f.outcome === 'charge').reduce((sum, f) => sum + Number(f.proposedGBP), 0);
+  const totalGBP = findings.reduce((sum, f) => sum + Number(f.setGBP ?? f.proposedGBP ?? 0), 0);
   const checks = await Promise.all(
     approvals.map((a) =>
       verifyApproval(a.token).then(
@@ -33,6 +33,7 @@ export default async function ApprovePage({ params }: PageProps<'/hire/[hireRef]
   const now = new Date();
   const open = approvals.find((a) => a.finalCapture && !a.usedAt && a.expiresAt > now);
   const settled = hire.status === 'settled';
+  const unpriced = findings.filter((f) => f.outcome === 'owner_look' && f.setGBP === null).length;
 
   return (
     <main>
@@ -41,7 +42,7 @@ export default async function ApprovePage({ params }: PageProps<'/hire/[hireRef]
       </p>
       <h1>Findings for {hireRef}</h1>
       <p>
-        Hold {auth.id}: {auth.status}. Still held: {gbp(remainingGBP)}.
+        Hold {auth.id}: {auth.status}. {settled ? 'Released' : 'Still held'}: {gbp(remainingGBP)}.
       </p>
 
       {findings.length === 0 ? (
@@ -63,33 +64,61 @@ export default async function ApprovePage({ params }: PageProps<'/hire/[hireRef]
             </tr>
           </thead>
           <tbody>
-            {findings.map((f) => (
-              <tr key={f.id}>
-                <td>{f.angle}</td>
-                <td>{f.kind}</td>
-                <td>{f.description}</td>
-                <td>{f.clauseId && `${f.clauseId}: ${CLAUSES.find((c) => c.id === f.clauseId)?.name ?? 'not in schedule'}`}</td>
-                <td>{f.severity}</td>
-                <td>{f.confidence.toFixed(2)}</td>
-                <td>{f.outcome === 'owner_look' ? 'Owner look' : f.outcome === 'charge' ? 'Charge' : 'No charge'}</td>
-                <td>{f.proposedGBP === null ? '—' : gbp(Number(f.proposedGBP))}</td>
-                <td>{f.reason}</td>
-                <td>
-                  {f.pickupPhotoId} / {f.returnPhotoId}
-                </td>
-              </tr>
-            ))}
+            {findings.map((f) => {
+              const clause = CLAUSES.find((c) => c.id === f.clauseId);
+              return (
+                <tr key={f.id}>
+                  <td>{f.angle}</td>
+                  <td>{f.kind}</td>
+                  <td>{f.description}</td>
+                  <td>{f.clauseId && `${f.clauseId}: ${clause?.name ?? 'not in schedule'}`}</td>
+                  <td>{f.severity}</td>
+                  <td>{f.confidence.toFixed(2)}</td>
+                  <td>{f.outcome === 'owner_look' ? 'Owner look' : f.outcome === 'charge' ? 'Charge' : 'No charge'}</td>
+                  <td>
+                    {f.setGBP === null
+                      ? f.proposedGBP === null
+                        ? '—'
+                        : gbp(Number(f.proposedGBP))
+                      : f.outcome === 'charge'
+                        ? `${gbp(Number(f.setGBP))}, lowered from ${gbp(Number(f.proposedGBP))} by ${f.setBy}`
+                        : `${gbp(Number(f.setGBP))}, set by ${f.setBy}`}
+                    {(f.outcome === 'owner_look' || f.outcome === 'charge') && clause?.chargeable && !settled && (
+                      <form action={setAmount.bind(null, hireRef, f.id)}>
+                        <label>
+                          {f.outcome === 'charge'
+                            ? `Lower to, in £ (up to ${gbp(Number(f.proposedGBP))}; 0 waives it, blank restores it)`
+                            : `Amount in £ (${clause.lowGBP === clause.highGBP ? gbp(clause.lowGBP) : `${gbp(clause.lowGBP)}–${gbp(clause.highGBP)}`}, capped at the hold; blank clears)`}{' '}
+                          <input className="border" name="amountGBP" type="number" min="0" step="0.01" defaultValue={f.setGBP === null ? '' : Number(f.setGBP).toFixed(2)} />
+                        </label>{' '}
+                        <button>{f.outcome === 'charge' ? 'Lower' : 'Set amount'}</button>
+                      </form>
+                    )}
+                  </td>
+                  <td>{f.reason}</td>
+                  <td>
+                    {f.pickupPhotoId} / {f.returnPhotoId}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
 
       <h2>Approve</h2>
       <p>
-        Proposed total: <strong>{gbp(totalGBP)}</strong>. Owner-look findings carry no amount and are not part of it.
+        Total to approve: <strong>{gbp(totalGBP)}</strong>. An owner-look finding counts only once a person sets its amount.
       </p>
       {!settled && totalGBP > 0 && !open && (
         <form action={approveCharges.bind(null, hireRef)}>
           <button>Approve up to {gbp(totalGBP)} as Priya (H-01)</button>
+        </form>
+      )}
+      {!settled && totalGBP === 0 && findings.length > 0 && hire.status !== 'booked' && (
+        <form action={releaseHold.bind(null, hireRef)}>
+          {unpriced > 0 && <p>{unpriced} owner-look finding(s) have no amount: releasing means no charge for them.</p>}
+          <button>Release {gbp(remainingGBP)}, no charge, as Priya (H-01)</button>
         </form>
       )}
 

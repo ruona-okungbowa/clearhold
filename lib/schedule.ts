@@ -1,5 +1,5 @@
 // The published damage schedule, the hire catalogue and the capture angles. Fictional fixtures.
-// shortcut: constants, not tables; move to Clause/Item/ItemMark tables when a second item exists.
+// shortcut: constants, not tables; move to Clause/Item tables when a second item exists.
 
 export type Clause = { id: string; name: string; chargeable: boolean; lowGBP: number; highGBP: number };
 
@@ -15,7 +15,7 @@ export type KnownMark = { id: string; description: string; firstSeen: string };
 
 export const ITEMS: Record<
   string,
-  { name: string; branch: string; feeGBP: number; depositGBP: number; hireDays: number; knownMarks: KnownMark[] }
+  { name: string; branch: string; feeGBP: number; depositGBP: number; hireDays: number }
 > = {
   'BLZ-NAVY-40R': {
     name: 'Navy wool blazer, 40R',
@@ -23,7 +23,6 @@ export const ITEMS: Record<
     feeGBP: 28,
     depositGBP: 60,
     hireDays: 3,
-    knownMarks: [{ id: 'KM-38-CUFF', description: 'Faint mark on the left cuff', firstSeen: 'hire #38' }],
   },
 };
 
