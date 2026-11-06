@@ -27,10 +27,13 @@ export function pence(gbp: string): number {
   return Number(pounds) * 100 + Number(p.padEnd(2, '0'));
 }
 
-export async function createApproval(a: { authorizationId: string; maxGBP: string; finalCapture: boolean; approver: string }) {
+export async function createApproval(
+  a: { authorizationId: string; maxGBP: string; finalCapture: boolean; approver: string },
+  ttlMs = TTL_MS,
+) {
   if (pence(a.maxGBP) <= 0) throw new ApprovalError('An approval must cover more than £0');
   const id = randomUUID();
-  const expiresAt = new Date(Date.now() + TTL_MS);
+  const expiresAt = new Date(Date.now() + ttlMs);
   const token = await new SignJWT({ max: a.maxGBP, final: a.finalCapture, approver: a.approver })
     .setProtectedHeader({ alg: 'HS256' })
     .setIssuer(ISSUER)

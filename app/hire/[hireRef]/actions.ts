@@ -5,7 +5,7 @@ import { cancelOpenApprovals, createApproval, pence } from '@/lib/approval';
 import { audit, auditScope } from '@/lib/audit';
 import { db } from '@/lib/db';
 import { Prisma } from '@/lib/generated/prisma/client';
-import { amountPence, captureApproved, holdOf, releaseHire } from '@/lib/hold';
+import { amountPence, captureApproved, holdOf, releaseHire, resolveContest } from '@/lib/hold';
 import { inspect, isNewMark, MODEL, personPence, PROMPT_VERSION } from '@/lib/inspector';
 import { CLAUSES } from '@/lib/schedule';
 
@@ -30,6 +30,8 @@ export async function runInspector(hireRef: string) {
   await inScope(hireRef, async () => {
     const { hire, auth, remainingGBP } = await holdOf(hireRef);
     if (hire.status === 'settled') throw new Error(`${hireRef} is already settled`);
+    // A re-run replaces the findings the renter contested, and could price them higher.
+    if (hire.status === 'contested') throw new Error(`The renter contested ${hireRef}: lower or remove charges, then approve`);
     await cancelOpenApprovals(auth.id);
     const [photos, marks] = await Promise.all([
       db.photo.findMany({ where: { hireId: hire.id } }),
@@ -120,7 +122,16 @@ export async function approveCharges(hireRef: string) {
     const totalPence = findings.reduce((sum, f) => sum + amountPence(f), 0);
     if (totalPence <= 0) throw new Error('Nothing to approve: no finding carries a charge');
     if (totalPence > Math.round(remainingGBP * 100)) throw new Error('The findings total more than the remaining hold; run the inspector again');
-    await createApproval({ authorizationId: auth.id, maxGBP: (totalPence / 100).toFixed(2), finalCapture: true, approver: STAFF });
+    if (hire.status === 'contested') {
+      // The renter contested the total in the last final approval; a contest can keep, lower or remove it, never raise it.
+      const contested = await db.approval.findFirst({ where: { authorizationId: auth.id, finalCapture: true }, orderBy: { createdAt: 'desc' } });
+      if (!contested || totalPence > pence(contested.maxGBP.toFixed(2)))
+        throw new Error(`A contest can only keep or lower the charge: £${(totalPence / 100).toFixed(2)} is more than the £${contested?.maxGBP.toFixed(2)} contested`);
+    }
+    // The renter has 48 hours from this approval to accept or contest, and their link lives exactly as long as it,
+    // so 30 minutes would kill the link and the capture inside the window. The extra hour lets staff settle at its end.
+    await createApproval({ authorizationId: auth.id, maxGBP: (totalPence / 100).toFixed(2), finalCapture: true, approver: STAFF }, 49 * 3_600_000);
+    if (hire.status === 'contested') await resolveContest(hire.id, `approved £${(totalPence / 100).toFixed(2)}`);
   });
 }
 
@@ -128,6 +139,7 @@ export async function approveCharges(hireRef: string) {
 export async function settleHire(hireRef: string) {
   await inScope(hireRef, async () => {
     const { hire, auth } = await holdOf(hireRef);
+    if (hire.status === 'contested') throw new Error(`The renter contested ${hireRef}: resolve it and approve again before settling`);
     const approval = await db.approval.findFirst({
       where: { authorizationId: auth.id, finalCapture: true, usedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: 'desc' },

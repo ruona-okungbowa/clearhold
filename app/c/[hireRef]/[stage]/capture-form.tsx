@@ -10,7 +10,7 @@ const LONG_EDGE = 1568;
 
 const describe = (p: Stored) => `Stored at ${new Date(p.serverAt).toLocaleString('en-GB')} (server time), SHA-256 ${p.sha256.slice(0, 16)}…`;
 
-async function shrink(file: File): Promise<Blob> {
+export async function shrink(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, LONG_EDGE / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement('canvas');

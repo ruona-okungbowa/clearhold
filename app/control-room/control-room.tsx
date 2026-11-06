@@ -144,8 +144,15 @@ export function ControlRoom({
     }),
     [holds, hires, findings],
   );
-  // Read once by Studio on mount.
-  const [initialState] = useState(() => savedState ?? DEFAULT_STATE);
+  // Read once by Studio on mount. A layout saved before a field joined the evidence widget lacks its mapping,
+  // which would leave the widget asking for one, so missing keys come from the widget's defaults.
+  const [initialState] = useState(() => {
+    if (!savedState) return DEFAULT_STATE;
+    for (const page of savedState.pages)
+      for (const w of Object.values(page.widgets ?? {}) as { type: string; dataMapping?: object }[])
+        if (w.type === "evidence-pair") w.dataMapping = { ...evidencePairWidget.defaultState!.dataMapping, ...w.dataMapping };
+    return savedState;
+  });
 
   const save = async () => {
     const api = apiRef.current;
