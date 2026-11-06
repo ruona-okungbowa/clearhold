@@ -13,7 +13,8 @@
     "check:axis": "tsx scripts/check-axis-ticks.ts",
     "check:day3": "tsx --env-file=.env.local scripts/check-day3.ts",
     "check:money": "tsx --env-file=.env.local scripts/check-money.ts",
-    "evals": "tsx --env-file=.env.local scripts/evals.ts"
+    "evals": "tsx --env-file=.env.local scripts/evals.ts",
+    "agent-evals": "tsx --env-file=.env.local scripts/agent-evals.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.94",

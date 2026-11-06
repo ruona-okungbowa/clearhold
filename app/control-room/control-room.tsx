@@ -27,6 +27,7 @@ interface ControlRoomRegistry extends AgBaseRegistry {
   )[];
 }
 import { saveLayout } from "./actions";
+import { buildDeskAi } from "./desk-agent";
 
 if (process.env.NODE_ENV !== "production") {
   enableStudioDevValidations();
@@ -108,14 +109,18 @@ export function ControlRoom({
   findings,
   savedState,
   licenseKey,
+  aiModels,
 }: {
   holds: Row[];
   hires: Row[];
   findings: Row[];
   savedState: AgReportState<ControlRoomRegistry> | null;
   licenseKey?: string;
+  aiModels?: string[];
 }) {
   const apiRef = useRef<AgStudioApi | null>(null);
+  // Read once, when Studio is created; off when no OpenAI key is configured, as on the dashboard.
+  const [ai] = useState(() => (aiModels?.length ? buildDeskAi(aiModels, holds, hires) : undefined));
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
   );
@@ -198,6 +203,7 @@ export function ControlRoom({
             data={data}
             widgets={widgets}
             initialState={initialState}
+            ai={ai}
             mode="edit"
             onApiReady={(event) => {
               apiRef.current = event.api;

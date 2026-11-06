@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { connection } from "next/server";
+import { aiEnabled, aiModels } from "@/lib/ai";
 import { db } from "@/lib/db";
 import { getSavedLayout } from "./saved-layout";
 import { ControlRoom } from "./control-room";
@@ -61,6 +62,7 @@ export default async function ControlRoomPage() {
       }))}
       savedState={savedState}
       licenseKey={process.env.AG_STUDIO}
+      aiModels={aiEnabled() ? aiModels() : undefined}
     />
   );
 }
