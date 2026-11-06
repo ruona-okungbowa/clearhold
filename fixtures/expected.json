@@ -4,6 +4,12 @@
       "id": "E01",
       "title": "Clean blazer, all angles: no findings, no charge",
       "clean": true,
+      "awaiting": "separate return shots of the clean blazer (not copies of the pick-up), at fixtures/blazer/return/{front,back}.jpg",
+      "pairs": {
+        "front": ["blazer/pickup/front", "blazer/return/front"],
+        "back": ["blazer/pickup/back", "blazer/return/back"]
+      },
+      "expect": { "allow": { "front": ["no_charge"], "back": ["no_charge"] }, "maxTotalGBP": 0 }
       "pairs": {
         "front": ["blazer/pickup/front", "blazer/return/front"],
         "back": ["blazer/pickup/back", "blazer/return/back"],
@@ -14,6 +20,8 @@
     {
       "id": "E02",
       "title": "New stains on the hoodie front: stain clause, within band; other angles clean",
+      "pairs": { "front": ["hoodie/pickup/front", "hoodie/return/front"] },
+      "expect": { "need": { "front": ["charge", "owner_look"] }, "chargeClauses": ["S1"], "maxTotalGBP": 30 }
       "pairs": {
         "front": ["hoodie/pickup/front", "hoodie/return/front"],
         "back": ["hoodie/pickup/back", "hoodie/return/back"],
@@ -29,6 +37,7 @@
     {
       "id": "E03",
       "title": "Same stains visible at pick-up and return: never charged",
+      "synthetic": true,
       "pairs": { "front": ["hoodie/return/front", "hoodie/return/front"] },
       "expect": { "allow": { "front": ["no_charge", "owner_look"] }, "maxTotalGBP": 0 }
     },
@@ -94,6 +103,11 @@
     {
       "id": "E17",
       "title": "Stains absent from this pick-up but on record from an earlier hire: known mark, no charge",
+      "knownMarks": [
+        { "id": "KM-12-CHEST-L", "description": "Brown make-up stain, left chest, about 3 cm", "firstSeen": "hire #12" },
+        { "id": "KM-12-CHEST-R", "description": "Brown make-up stain, right chest, about 3 cm", "firstSeen": "hire #12" },
+        { "id": "KM-12-POCKET", "description": "Small brown stain, centre front just above the pocket", "firstSeen": "hire #12" }
+      ],
       "knownMarks": [{ "id": "KM-12-CHEST", "description": "Brown stains on the chest and above the pocket", "firstSeen": "hire #12" }],
       "pairs": { "front": ["hoodie/pickup/front", "hoodie/return/front"] },
       "expect": { "allow": { "front": ["no_charge"] }, "maxTotalGBP": 0 }
@@ -104,6 +118,22 @@
       "guardrail": true,
       "findings": [{ "clauseId": "R1", "severity": "major", "description": "A 6-8 cm tear across the front panel" }],
       "expect": { "allow": { "front": ["owner_look"] }, "maxTotalGBP": 0 }
+    },
+    {
+      "id": "E23",
+      "title": "Three S1 stains across two angles: one charge (settlement only)",
+      "guardrail": true,
+      "findings": [
+        { "angle": "front", "clauseId": "S1", "severity": "moderate" },
+        { "angle": "front", "clauseId": "S1", "severity": "minor" },
+        { "angle": "left-sleeve", "clauseId": "S1", "severity": "moderate" }
+      ],
+      "expect": {
+        "allow": { "front": ["charge", "no_charge"], "left-sleeve": ["no_charge"] },
+        "chargeClauses": ["S1"],
+        "charges": [24],
+        "maxTotalGBP": 24
+      }
     }
   ]
 }

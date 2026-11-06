@@ -51,10 +51,21 @@ function checkSettlement() {
   assert.equal(one({ knownMarkId: 'KM-NOPE', kind: 'known_mark' }).outcome, 'owner_look');
   assert.equal(one({ knownMarkId: 'KM-38-CUFF' }).outcome, 'owner_look'); // new damage matched to a known mark
 
-  // Capped at the remaining hold across findings: £24 then £6 of a £30 hold, then nothing left.
-  const capped = settle([finding({}), finding({}), finding({})], { photoIds, knownMarks, remainingGBP: 30 });
-  assert.deepEqual(capped.map((f) => f.proposedGBP), [24, 6, null]);
+  // Capped at the remaining hold across findings: buttons of a £10 hold go £6, then the £4 left, then nothing.
+  const button = { kind: 'missing_part', clauseId: 'B1' } as const;
+  const capped = settle([finding(button), finding(button), finding(button)], { photoIds, knownMarks, remainingGBP: 10 });
+  assert.deepEqual(capped.map((f) => f.proposedGBP), [6, 4, null]);
   assert.deepEqual(capped.map((f) => f.outcome), ['charge', 'charge', 'owner_look']);
+
+  // S1 once per garment: the highest point carries it (ties to the first angle), the rest are kept, uncharged.
+  const sleeve = { angle: 'left-sleeve', pickupPhotoId: 'P3', returnPhotoId: 'R3' };
+  const stains = settle([finding({ ...sleeve }), finding({ severity: 'minor' }), finding({}), finding(button)], { photoIds, knownMarks, remainingGBP: 60 });
+  assert.deepEqual(stains.map((f) => [f.outcome, f.proposedGBP]), [['no_charge', null], ['no_charge', null], ['charge', 24], ['charge', 6]]);
+  assert.equal(stains[0].reason, 'Covered by the S1 charge on front');
+  assert.deepEqual(stains[0].box, finding({}).box);
+  // S1 comes off the hold last, so it is what gets capped; a used-up hold sends every stain to a person.
+  assert.deepEqual(settle([finding({}), finding(button)], { photoIds, knownMarks, remainingGBP: 20 }).map((f) => f.proposedGBP), [14, 6]);
+  assert.deepEqual(settle([finding({}), finding({ ...sleeve }), finding(button)], { photoIds, knownMarks, remainingGBP: 6 }).map((f) => f.outcome), ['owner_look', 'owner_look', 'charge']);
   assert.equal(one({ clauseId: 'R1', severity: 'moderate' }).proposedGBP, 60); // £140 replacement capped at £60
 
   // Unrecorded pick-up marks: logged only if confident and citing the real photo pair, and never priced.

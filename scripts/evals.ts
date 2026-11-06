@@ -18,6 +18,7 @@ type Case = {
   title: string;
   guardrail?: boolean;
   clean?: boolean;
+  synthetic?: boolean; // stands in for a real photo set; shown as "(synthetic)"
   awaiting?: string;
   remainingGBP?: number;
   knownMarks?: KnownMark[];
@@ -27,6 +28,7 @@ type Case = {
     allow?: Record<string, Outcome[]>; // every finding on the angle must have one of these outcomes
     need?: Record<string, Outcome[]>; // at least one finding on the angle must
     chargeClauses?: string[];
+    charges?: number[]; // exactly these charge amounts, in finding order
     maxTotalGBP?: number;
   };
 };
@@ -51,7 +53,8 @@ function run(c: Case): Promise<Settled[]> | Settled[] {
   const remainingGBP = c.remainingGBP ?? 60;
   if (c.findings) {
     const findings = c.findings.map((f) => ({ ...CANNED, ...f }));
-    return settle(findings, { photoIds: { front: { pickup: 'P', return: 'R' } }, knownMarks, remainingGBP });
+    const photoIds = Object.fromEntries(findings.map((f) => [f.angle, { pickup: 'P', return: 'R' }]));
+    return settle(findings, { photoIds, knownMarks, remainingGBP });
   }
   const pairs = Object.entries(c.pairs ?? {});
   const photos = pairs.flatMap(([angle, refs]) =>
@@ -81,6 +84,8 @@ function judge({ expect }: Case, settled: Settled[]) {
   for (const f of settled)
     if (expect.chargeClauses && f.outcome === 'charge' && !expect.chargeClauses.includes(f.clauseId ?? ''))
       fails.push(`${f.angle}: charged on ${f.clauseId}, wanted ${expect.chargeClauses.join(' or ')}`);
+  const charges = settled.filter((f) => f.outcome === 'charge').map((f) => f.proposedGBP);
+  if (expect.charges && charges.join() !== expect.charges.join()) fails.push(`charges £${charges.join(', £')}, wanted £${expect.charges.join(', £')}`);
   if (expect.maxTotalGBP !== undefined && totalGBP(settled) > expect.maxTotalGBP) fails.push(`total £${totalGBP(settled)} is over £${expect.maxTotalGBP}`);
   return fails;
 }
@@ -95,7 +100,7 @@ async function main() {
     const type = c.guardrail ? 'G' : c.clean ? 'C' : '';
     const refs = Object.values(c.pairs ?? {}).flat();
     if (c.awaiting && refs.some((r) => r && !photoFile(r))) {
-      rows.push({ id: c.id, type, result: 'NO FIXTURE', charged: '', case: c.title });
+      rows.push({ id: c.id, type, result: 'NO FIXTURE', charged: '', case: c.synthetic ? `${c.title} (synthetic)` : c.title });
       details.push(`${c.id} needs ${c.awaiting}`);
       continue;
     }
@@ -103,7 +108,7 @@ async function main() {
     const fails = judge(c, settled);
     const unreached = settled.filter((f) => f.reason === INSPECT_FAILED);
     const result = unreached.length ? 'ERROR' : fails.length ? 'FAIL' : 'PASS';
-    rows.push({ id: c.id, type, result, charged: `£${totalGBP(settled).toFixed(2)}`, case: c.title });
+    rows.push({ id: c.id, type, result, charged: `£${totalGBP(settled).toFixed(2)}`, case: c.synthetic ? `${c.title} (synthetic)` : c.title });
     details.push(
       `${c.id} ${settled.map((f) => `${f.angle}: ${f.kind}/${f.outcome}${f.proposedGBP ? ` £${f.proposedGBP}` : ''}`).join('; ')}`,
       ...fails.map((why) => `  FAIL ${why}`),
