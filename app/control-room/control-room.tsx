@@ -90,9 +90,52 @@ const DEFAULT_STATE = {
         2: { xTrack: 10, yTrack: 0, xSpan: 14, ySpan: 40 },
       },
     },
+    // Risk: built-in charts over the per-hire numbers the page computes (keptPct, contestedPct, decided,
+    // staffDecisions); averaging a 0-or-100 field gives the rate.
+    {
+      id: "risk",
+      widgets: {
+        1: {
+          type: "line-chart",
+          format: { title: { text: "Keep rate by shop, per week (% of settled hires charged)", enabled: true } },
+          dataMapping: {
+            categoryKey: [{ id: "hires.returnedAt::week" }],
+            valueKey: [{ id: "hires.keptPct", aggregation: "avg" }],
+            legendKey: [{ id: "hires.branch" }],
+          },
+        },
+        2: {
+          type: "bar-chart-grouped",
+          format: { title: { text: "Contest rate by staff code (% of charge decisions, codes with 20 or more)", enabled: true } },
+          dataMapping: {
+            categoryKey: [{ id: "hires.staffCode" }],
+            valueKey: [{ id: "hires.contestedPct", aggregation: "avg" }],
+            tooltipKey: [{ id: "hires.staffDecisions", aggregation: "max" }],
+          },
+        },
+      },
+      widgetLayout: {
+        1: { xTrack: 0, yTrack: 0, xSpan: 24, ySpan: 30 },
+        2: { xTrack: 0, yTrack: 30, xSpan: 24, ySpan: 34 },
+      },
+      filter: {
+        widget: {
+          1: [{ field: { id: "hires.status" }, model: { operator: "equals", value: "settled" } }],
+          2: [
+            { field: { id: "hires.decided" }, model: { operator: "isTrue" } },
+            { field: { id: "hires.staffDecisions" }, model: { operator: "greaterThanOrEqual", value: 20 } },
+          ],
+        },
+      },
+    },
   ],
   selectedPageId: "holds",
 } as AgReportState<ControlRoomRegistry>;
+
+const PAGES = [
+  ["holds", "Holds"],
+  ["risk", "Risk"],
+] as const;
 
 const widgets = (config: AgWidgetsConfig<AgDefaultRegistry>) =>
   createWidgets<ControlRoomRegistry>({
@@ -153,11 +196,22 @@ export function ControlRoom({
   // which would leave the widget asking for one, so missing keys come from the widget's defaults.
   const [initialState] = useState(() => {
     if (!savedState) return DEFAULT_STATE;
+    // A layout saved before the Risk page existed gets it added.
+    if (!savedState.pages.some((p) => p.id === "risk")) savedState.pages.push(DEFAULT_STATE.pages.find((p) => p.id === "risk")!);
     for (const page of savedState.pages)
       for (const w of Object.values(page.widgets ?? {}) as { type: string; dataMapping?: object }[])
         if (w.type === "evidence-pair") w.dataMapping = { ...evidencePairWidget.defaultState!.dataMapping, ...w.dataMapping };
     return savedState;
   });
+
+  // Studio leaves page navigation to the host, so the header switches pages.
+  const [pageId, setPageId] = useState(initialState.selectedPageId ?? "holds");
+  const showPage = (id: string) => {
+    const api = apiRef.current;
+    if (!api) return;
+    api.setState({ ...api.getState(), selectedPageId: id });
+    setPageId(id);
+  };
 
   const save = async () => {
     const api = apiRef.current;
@@ -175,7 +229,22 @@ export function ControlRoom({
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex items-center justify-between gap-4 border-b border-black/10 px-4 py-2">
-        <h1 className="font-semibold">Control room</h1>
+        <div className="flex items-center gap-4">
+          <h1 className="font-semibold">Control room</h1>
+          <nav aria-label="Pages" className="flex gap-1 text-sm">
+            {PAGES.map(([id, label]) => (
+              <button
+                key={id}
+                type="button"
+                onClick={() => showPage(id)}
+                aria-current={pageId === id ? "page" : undefined}
+                className="rounded px-3 py-1 font-medium hover:bg-black/5 aria-[current=page]:bg-black/10"
+              >
+                {label}
+              </button>
+            ))}
+          </nav>
+        </div>
         <div className="flex items-center gap-3 text-sm">
           <span role="status" aria-live="polite">
             {status === "saving"

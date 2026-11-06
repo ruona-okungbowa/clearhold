@@ -21,6 +21,7 @@ model Hire {
   returnedAt     DateTime?
   status         String // booked, out, returned, contested, settled
   seeded         Boolean         @default(false) // seeded history vs live sandbox hire
+  staffCode      String? // who settled it, e.g. "H-01" (Halifax's first); null on live sandbox hires
   authorizations Authorization[]
   photos         Photo[]
   findings       Finding[]

@@ -10,6 +10,7 @@
     "spike:money": "tsx --env-file=.env.local scripts/spike-money.ts",
     "postinstall": "prisma generate",
     "db:seed": "tsx --env-file=.env.local scripts/seed-holds.ts",
+    "db:seed-history": "tsx --env-file=.env.local scripts/seed-history.ts",
     "check:axis": "tsx scripts/check-axis-ticks.ts",
     "check:day3": "tsx --env-file=.env.local scripts/check-day3.ts",
     "check:money": "tsx --env-file=.env.local scripts/check-money.ts",
