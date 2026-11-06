@@ -4,8 +4,10 @@ import { notFound } from 'next/navigation';
 import { verifyApproval } from '@/lib/approval';
 import { db } from '@/lib/db';
 import { holdOf } from '@/lib/hold';
+import { renterLink } from '@/lib/renter-link';
 import { ANGLES, CLAUSES } from '@/lib/schedule';
 import { approveCharges, releaseHold, setAmount, settleHire } from '../actions';
+import { CopyLink } from './copy-link';
 
 export const metadata: Metadata = { title: 'Approve charges' };
 
@@ -16,9 +18,10 @@ export default async function ApprovePage({ params }: PageProps<'/hire/[hireRef]
   const { hireRef } = await params;
   const hold = await holdOf(hireRef).catch((err: Error) => (err.message.startsWith('No hold') ? notFound() : Promise.reject(err)));
   const { hire, auth, remainingGBP } = hold;
-  const [findings, approvals] = await Promise.all([
+  const [findings, approvals, contest] = await Promise.all([
     db.finding.findMany({ where: { hireId: hire.id } }),
     db.approval.findMany({ where: { authorizationId: auth.id }, orderBy: { createdAt: 'asc' } }),
+    db.contest.findUnique({ where: { hireId: hire.id } }),
   ]);
   findings.sort((a, b) => (order.get(a.angle) ?? 9) - (order.get(b.angle) ?? 9));
   const totalGBP = findings.reduce((sum, f) => sum + Number(f.setGBP ?? f.proposedGBP ?? 0), 0);
@@ -34,6 +37,9 @@ export default async function ApprovePage({ params }: PageProps<'/hire/[hireRef]
   const open = approvals.find((a) => a.finalCapture && !a.usedAt && a.expiresAt > now);
   const settled = hire.status === 'settled';
   const unpriced = findings.filter((f) => f.outcome === 'owner_look' && f.setGBP === null).length;
+  const contested = contest?.status === 'open';
+  // The renter's link lives exactly as long as the approval it shows them.
+  const link = open && !settled ? `/r/${await renterLink(hireRef, open.expiresAt)}` : null;
 
   return (
     <main>
@@ -44,6 +50,21 @@ export default async function ApprovePage({ params }: PageProps<'/hire/[hireRef]
       <p>
         Hold {auth.id}: {auth.status}. {settled ? 'Released' : 'Still held'}: {gbp(remainingGBP)}.
       </p>
+
+      {contest && (
+        <section>
+          <h2>{contested ? 'The renter contests these charges' : `Contest resolved by ${contest.resolvedBy}`}</h2>
+          <p>
+            {contest.findingId ? `On ${findings.find((f) => f.id === contest.findingId)?.angle ?? 'a replaced finding'}: ` : 'On the charges as a whole: '}
+            {contest.note}
+          </p>
+          {contest.photoId && (
+            // eslint-disable-next-line @next/next/no-img-element -- a private photo of unknown size, not for the image optimiser
+            <img src={`/api/photos/${contest.photoId}`} alt="The renter's contest photo" style={{ maxWidth: 320 }} />
+          )}
+          {contested && <p>Lower or remove charges below, then approve (that resolves it) or release the hold. A contest cannot raise the total.</p>}
+        </section>
+      )}
 
       {findings.length === 0 ? (
         <p>No findings yet. Run the inspector from the hire page.</p>
@@ -112,7 +133,9 @@ export default async function ApprovePage({ params }: PageProps<'/hire/[hireRef]
       </p>
       {!settled && totalGBP > 0 && !open && (
         <form action={approveCharges.bind(null, hireRef)}>
-          <button>Approve up to {gbp(totalGBP)} as Priya (H-01)</button>
+          <button>
+            {contested ? 'Resolve the contest and approve' : 'Approve'} up to {gbp(totalGBP)} as Priya (H-01)
+          </button>
         </form>
       )}
       {!settled && totalGBP === 0 && findings.length > 0 && hire.status !== 'booked' && (
@@ -136,6 +159,8 @@ export default async function ApprovePage({ params }: PageProps<'/hire/[hireRef]
           ))}
         </ol>
       )}
+
+      {link && <CopyLink path={link} />}
 
       {open && !settled && (
         <form action={settleHire.bind(null, hireRef)}>

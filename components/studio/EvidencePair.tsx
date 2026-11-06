@@ -16,6 +16,8 @@ const FIELDS = {
   hireRef: { id: 'hires.hireRef', label: 'Hire', role: 'category' },
   hireStatus: { id: 'hires.status', label: 'Hire status', role: 'category' },
   openApproval: { id: 'hires.openApproval', label: 'Open final approval', role: 'category' },
+  contestNote: { id: 'hires.contestNote', label: 'Open contest note', role: 'category' },
+  contestPhotoId: { id: 'hires.contestPhotoId', label: 'Open contest photo', role: 'category' },
   angle: { id: 'findings.angle', label: 'Angle', role: 'category' },
   description: { id: 'findings.description', label: 'Description', role: 'category' },
   clauseId: { id: 'findings.clauseId', label: 'Clause', role: 'category' },
@@ -45,6 +47,8 @@ type Row = {
   hireRef: string;
   hireStatus: string;
   openApproval: boolean;
+  contestNote: string;
+  contestPhotoId: string;
   angle: string;
   description: string;
   clauseId: string | null;
@@ -219,6 +223,18 @@ export function EvidencePair(params: AgWidgetParams<EvidencePairState>) {
           <Photo id={row.returnPhotoId} label={`Return, ${row.angle}`} box={row.box ? (JSON.parse(row.box) as Box) : null} />
         </div>
 
+        {row.contestNote && (
+          // Empty strings, not nulls, when there is no contest: Studio drops a column with no values.
+          <div role="note" style={{ padding: 8, border: '1px solid rgb(214 40 40)', borderRadius: 4 }}>
+            <strong>The renter contests {row.hireRef}:</strong> {row.contestNote}
+            {row.contestPhotoId && (
+              <div style={{ maxWidth: '50%', marginTop: 4 }}>
+                <Photo id={row.contestPhotoId} label="Renter's photo" />
+              </div>
+            )}
+            <div style={{ fontSize: 11, opacity: 0.7 }}>Lower or remove, then approve: that resolves it. The total cannot go up.</div>
+          </div>
+        )}
         <p style={{ margin: 0 }}>{row.description}</p>
         <div>
           Clause:{' '}
@@ -279,7 +295,7 @@ export function EvidencePair(params: AgWidgetParams<EvidencePairState>) {
           {/* A second approval would stay open after the capture, so one at a time, as on the approve page. */}
           {!row.openApproval && (
             <button type="button" disabled={locked} onClick={() => run(() => approveHire(row.hireRef))} style={button}>
-              Approve all charges on {row.hireRef}
+              {row.contestNote ? 'Resolve the contest and approve' : 'Approve all charges on'} {row.hireRef}
             </button>
           )}
           {row.openApproval && !settled && (

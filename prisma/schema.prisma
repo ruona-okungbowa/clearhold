@@ -19,12 +19,13 @@ model Hire {
   startAt        DateTime
   dueBackAt      DateTime
   returnedAt     DateTime?
-  status         String // booked, out, returned, settled
+  status         String // booked, out, returned, contested, settled
   seeded         Boolean         @default(false) // seeded history vs live sandbox hire
   authorizations Authorization[]
   photos         Photo[]
   findings       Finding[]
   marks          ItemMark[]
+  contest        Contest?
   createdAt      DateTime        @default(now())
 }
 
@@ -81,6 +82,20 @@ model Finding {
   model         String
   promptVersion String
   createdAt     DateTime @default(now())
+}
+
+// The renter's one challenge to a hire's charges; hireId is unique, so a second is refused. findingId and photoId
+// are plain ids, not relations: a re-run inspector replaces findings, and the photo is a Photo row of stage "contest".
+model Contest {
+  id         String   @id @default(cuid())
+  hireId     String   @unique
+  hire       Hire     @relation(fields: [hireId], references: [id])
+  findingId  String?
+  note       String   @db.VarChar(500)
+  photoId    String?
+  status     String // open, resolved
+  resolvedBy String?
+  createdAt  DateTime @default(now())
 }
 
 // A person's signed permission to capture up to maxGBP from one hold, once, before expiresAt.

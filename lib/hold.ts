@@ -88,7 +88,7 @@ export async function captureApproved(token: string, amountGBP: string) {
 // Needs an inspection on record and the fee already taken, because a void also gives up an uncaptured fee.
 export async function releaseHire(hireRef: string, approver: string) {
   const { hire, auth, remainingGBP } = await holdOf(hireRef);
-  if (hire.status !== 'out' && hire.status !== 'returned') throw new Error(`${hireRef} is ${hire.status}: only a handed-over hire can be released`);
+  if (hire.status !== 'out' && hire.status !== 'returned' && hire.status !== 'contested') throw new Error(`${hireRef} is ${hire.status}: only a handed-over hire can be released`);
   const findings = await db.finding.findMany({ where: { hireId: hire.id } });
   if (!findings.length) throw new Error('Run the inspector first: a release needs an inspection on record');
   if (findings.some((f) => amountPence(f) > 0)) throw new Error('A finding still carries a charge: approve it, or lower it to £0');
@@ -99,6 +99,19 @@ export async function releaseHire(hireRef: string, approver: string) {
   const { status } = await getAuthorization(auth.id);
   await db.authorization.update({ where: { id: auth.id }, data: { status: status! } });
   if (status !== 'VOIDED') throw new Error(`PayPal reports hold ${auth.id} as ${status} after the void; the hire stays open`);
+  if (hire.status === 'contested') await resolveContest(hire.id, 'removed every charge');
   await db.hire.update({ where: { id: hire.id }, data: { status: 'settled', returnedAt: hire.returnedAt ?? new Date() } });
   await audit({ actor: 'human', type: 'hold.released', summary: `${approver} released £${remainingGBP.toFixed(2)} from hold ${auth.id}: no charge` });
+}
+
+// Staff answered the renter's contest by approving a total no higher than the one contested, or by releasing the hold.
+// The hire leaves "contested", so Settle works again; the contest row stays, so the renter gets no second one.
+export async function resolveContest(hireId: string, outcome: string) {
+  // shortcut: no sign-in yet, so every resolution is Priya's, as in app/hire/[hireRef]/actions.ts.
+  const resolvedBy = 'Priya (H-01)';
+  await db.$transaction([
+    db.contest.update({ where: { hireId }, data: { status: 'resolved', resolvedBy } }),
+    db.hire.update({ where: { id: hireId }, data: { status: 'returned' } }),
+  ]);
+  await audit({ actor: 'human', type: 'contest.resolved', summary: `${resolvedBy} resolved the renter's contest: ${outcome}` });
 }
