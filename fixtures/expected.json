@@ -10,12 +10,29 @@
         "back": ["blazer/pickup/back", "blazer/return/back"]
       },
       "expect": { "allow": { "front": ["no_charge"], "back": ["no_charge"] }, "maxTotalGBP": 0 }
+      "pairs": {
+        "front": ["blazer/pickup/front", "blazer/return/front"],
+        "back": ["blazer/pickup/back", "blazer/return/back"],
+        "sleeve": ["blazer/pickup/sleeve", "blazer/return/sleeve"]
+      },
+      "expect": { "allow": { "front": ["no_charge"], "back": ["no_charge"], "sleeve": ["no_charge"] }, "maxTotalGBP": 0 }
     },
     {
       "id": "E02",
       "title": "New stains on the hoodie front: stain clause, within band; other angles clean",
       "pairs": { "front": ["hoodie/pickup/front", "hoodie/return/front"] },
       "expect": { "need": { "front": ["charge", "owner_look"] }, "chargeClauses": ["S1"], "maxTotalGBP": 30 }
+      "pairs": {
+        "front": ["hoodie/pickup/front", "hoodie/return/front"],
+        "back": ["hoodie/pickup/back", "hoodie/return/back"],
+        "sleeve": ["hoodie/pickup/sleeve", "hoodie/return/sleeve"]
+      },
+      "expect": {
+        "need": { "front": ["charge", "owner_look"] },
+        "allow": { "back": ["no_charge"], "sleeve": ["no_charge"] },
+        "chargeClauses": ["S1"],
+        "maxTotalGBP": 60
+      }
     },
     {
       "id": "E03",
@@ -91,6 +108,7 @@
         { "id": "KM-12-CHEST-R", "description": "Brown make-up stain, right chest, about 3 cm", "firstSeen": "hire #12" },
         { "id": "KM-12-POCKET", "description": "Small brown stain, centre front just above the pocket", "firstSeen": "hire #12" }
       ],
+      "knownMarks": [{ "id": "KM-12-CHEST", "description": "Brown stains on the chest and above the pocket", "firstSeen": "hire #12" }],
       "pairs": { "front": ["hoodie/pickup/front", "hoodie/return/front"] },
       "expect": { "allow": { "front": ["no_charge"] }, "maxTotalGBP": 0 }
     },
