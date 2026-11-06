@@ -94,6 +94,14 @@ export async function setAmount(hireRef: string, findingId: string, form: FormDa
     const proposedPence = Math.round(Number(finding.proposedGBP ?? 0) * 100);
     const setPence = personPence(finding.outcome, proposedPence, clause, raw ? pence(raw) : null, leftPence);
     if (finding.outcome === 'owner_look' && setPence !== null && setPence <= 0) throw new Error('The other findings already use up the remaining hold');
+    // Lowering the existing charge is fine; pricing a second finding under the same once-per-garment clause is not.
+    if (
+      clause.oncePerGarment &&
+      finding.outcome === 'owner_look' &&
+      setPence !== null &&
+      findings.some((f) => f.id !== findingId && f.clauseId === clause.id && (f.outcome === 'charge' || f.setGBP !== null))
+    )
+      throw new Error(`${clause.id} is charged once per garment; adjust the existing ${clause.id} charge instead`);
 
     await cancelOpenApprovals(auth.id);
     const setGBP = setPence === null ? null : (setPence / 100).toFixed(2);

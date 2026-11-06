@@ -56,20 +56,26 @@ export const isNewMark = (f: Settled) => f.reason === NEW_MARK;
 
 // Clamp each amount to its clause's band and cap the running total at the remaining hold. Wear, dirt and
 // known marks are never priced; below the confidence floor, a major finding, or anything that doesn't
-// check out (photo ids, clause, known mark) goes to owner look with no amount.
+// check out (photo ids, clause, known mark) goes to owner look with no amount. A oncePerGarment clause (S1)
+// is charged once per hire, after every other charge; fixed-price clauses stay one charge per finding.
 export function settle(
   findings: AngleFinding[],
   ctx: { photoIds: Record<string, { pickup: string; return: string }>; knownMarks: KnownMark[]; remainingGBP: number },
 ): Settled[] {
   const known = new Set(ctx.knownMarks.map((m) => m.id));
   let leftPence = Math.round(ctx.remainingGBP * 100);
-  return findings.map((f) => {
-    const verdict = (outcome: Outcome, reason: string, amountPence: number | null = null): Settled => ({
-      ...f,
-      outcome,
-      reason,
-      proposedGBP: amountPence === null ? null : amountPence / 100,
-    });
+  // Into the band, down to what the hold has left, then off the hold.
+  const charge = (f: AngleFinding, clause: Clause, point: number) => {
+    const amount = clampPence(point, clause, leftPence);
+    if (amount <= 0) return verdictOf(f, 'owner_look', 'The remaining hold is already used up');
+    leftPence -= amount;
+    const band = clause.lowGBP === clause.highGBP ? `fixed £${clause.lowGBP}` : `band £${clause.lowGBP}–£${clause.highGBP}`;
+    return verdictOf(f, 'charge', `${clause.id} ${band}${amount < point ? ', capped at the remaining hold' : ''}`, amount);
+  };
+  const once = new Map<Clause, { i: number; point: number }[]>();
+
+  const settled = findings.map((f, i) => {
+    const verdict = (outcome: Outcome, reason: string) => verdictOf(f, outcome, reason);
     const ids = ctx.photoIds[f.angle];
     if (!ids || f.pickupPhotoId !== ids.pickup || f.returnPhotoId !== ids.return)
       return verdict('owner_look', "Cites photos that are not this angle's pick-up and return pair");
@@ -92,13 +98,36 @@ export function settle(
     const [low, high] = [clause.lowGBP * 100, clause.highGBP * 100];
     // Minor sits at the bottom of the band, anything else at its middle; the clamp is the guarantee.
     const point = f.severity === 'minor' ? low : Math.round((low + high) / 2);
-    const amount = clampPence(point, clause, leftPence);
-    if (amount <= 0) return verdict('owner_look', 'The remaining hold is already used up');
-    leftPence -= amount;
-    const band = low === high ? `fixed £${clause.lowGBP}` : `band £${clause.lowGBP}–£${clause.highGBP}`;
-    return verdict('charge', `${clause.id} ${band}${amount < point ? ', capped at the remaining hold' : ''}`, amount);
+    if (!clause.oncePerGarment) return charge(f, clause, point);
+    once.set(clause, [...(once.get(clause) ?? []), { i, point }]);
+    return verdict('charge', 'pending'); // replaced below
   });
+
+  // A once-per-garment clause comes off the hold last, as one charge on its highest band point (ties: the first
+  // angle in ANGLES order). The rest stay as evidence, uncharged.
+  for (const [clause, hits] of once) {
+    const [top, ...rest] = [...hits].sort((a, b) => b.point - a.point || angleRank(findings[a.i].angle) - angleRank(findings[b.i].angle));
+    const charged = (settled[top.i] = charge(findings[top.i], clause, top.point));
+    for (const { i } of rest)
+      settled[i] =
+        charged.outcome === 'charge'
+          ? verdictOf(findings[i], 'no_charge', `Covered by the ${clause.id} charge on ${charged.angle}`)
+          : verdictOf(findings[i], 'owner_look', charged.reason);
+  }
+  return settled;
 }
+
+const verdictOf = (f: AngleFinding, outcome: Outcome, reason: string, amountPence: number | null = null): Settled => ({
+  ...f,
+  outcome,
+  reason,
+  proposedGBP: amountPence === null ? null : amountPence / 100,
+});
+
+const angleRank = (angle: string) => {
+  const i = ANGLES.findIndex((a) => a.id === angle);
+  return i < 0 ? ANGLES.length : i;
+};
 
 // --- The model calls ---------------------------------------------------------------------------------
 
