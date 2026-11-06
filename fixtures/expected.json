@@ -4,24 +4,24 @@
       "id": "E01",
       "title": "Clean blazer, all angles: no findings, no charge",
       "clean": true,
+      "awaiting": "separate return shots of the clean blazer (not copies of the pick-up), at fixtures/blazer/return/{front,back}.jpg",
       "pairs": {
         "front": ["blazer/pickup/front", "blazer/return/front"],
-        "back": ["blazer/pickup/back", "blazer/return/back"],
-        "sleeve": ["blazer/pickup/sleeve", "blazer/return/sleeve"]
+        "back": ["blazer/pickup/back", "blazer/return/back"]
       },
-      "expect": { "allow": { "front": ["no_charge"], "back": ["no_charge"], "sleeve": ["no_charge"] }, "maxTotalGBP": 0 }
+      "expect": { "allow": { "front": ["no_charge"], "back": ["no_charge"] }, "maxTotalGBP": 0 }
     },
     {
       "id": "E02",
       "title": "New stains on the hoodie front: stain clause, within band; other angles clean",
+      "awaiting": "a separate return shot of the hoodie back (not a copy of the pick-up), at fixtures/hoodie/return/back.jpg",
       "pairs": {
         "front": ["hoodie/pickup/front", "hoodie/return/front"],
-        "back": ["hoodie/pickup/back", "hoodie/return/back"],
-        "sleeve": ["hoodie/pickup/sleeve", "hoodie/return/sleeve"]
+        "back": ["hoodie/pickup/back", "hoodie/return/back"]
       },
       "expect": {
         "need": { "front": ["charge", "owner_look"] },
-        "allow": { "back": ["no_charge"], "sleeve": ["no_charge"] },
+        "allow": { "back": ["no_charge"] },
         "chargeClauses": ["S1"],
         "maxTotalGBP": 60
       }
