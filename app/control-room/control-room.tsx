@@ -6,6 +6,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import {
+  AgStudioAiModule,
   enableStudioDevValidations,
   type AgBaseRegistry,
   type AgDataSourcesDefinition,
@@ -162,7 +163,7 @@ export function ControlRoom({
   aiModels?: string[];
 }) {
   const apiRef = useRef<AgStudioApi | null>(null);
-  // Read once, when Studio is created; off when no OpenAI key is configured, as on the dashboard.
+  // Read once, when Studio is created; off when no OpenAI key is configured.
   const [ai] = useState(() => (aiModels?.length ? buildDeskAi(aiModels, holds, hires) : undefined));
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">(
     "idle",
@@ -266,7 +267,7 @@ export function ControlRoom({
         </div>
       </header>
       <div className="min-h-0 flex-1">
-        <AgStudioProvider licenseKey={licenseKey}>
+        <AgStudioProvider licenseKey={licenseKey} modules={ai ? [AgStudioAiModule] : undefined}>
           <AgStudio<ControlRoomRegistry>
             style={{ height: "100%", width: "100%" }}
             data={data}

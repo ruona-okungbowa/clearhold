@@ -1,4 +1,4 @@
-// AG Studio theme for the PayPal dashboard. Every value points at a design token from
+// AG Studio theme, to become the control room's. Every value points at a design token from
 // app/globals.css, the same variables the shell's Tailwind classes use, so Studio renders as
 // part of the page rather than a component embedded in it: change a token there and the shell,
 // widgets, grids and charts all follow.

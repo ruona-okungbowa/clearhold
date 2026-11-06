@@ -1,10 +1,10 @@
 // The control room's desk agent: answers questions about holds, hires and findings, and hands widget work to
-// AG's own page and widget agents. It runs on the dashboard's AI path (openaiAdapter -> /api/ai/responses) and
-// has no tool that moves money or reaches a renter: approving, lowering, capturing and releasing stay on the
-// hire's pages, behind a person and a signed approval.
+// AG's own page and widget agents. It runs on AG Studio's OpenAI adapter (lib/studio/openai-adapter.ts ->
+// /api/ai/responses) and has no tool that moves money or reaches a renter: approving, lowering, capturing and
+// releasing stay on the hire's pages, behind a person and a signed approval.
 
 import { createAiHarness, directLlmRunner, type AgAiHarnessSetup, type AgAiPromptStarter } from 'ag-studio';
-import { openaiAdapter } from '@/app/dashboard/studio/openai-adapter';
+import { openaiAdapter } from '@/lib/studio/openai-adapter';
 
 type Row = Record<string, unknown>;
 
@@ -66,7 +66,7 @@ const PROMPT_STARTERS: AgAiPromptStarter[] = [
   { label: 'Open findings', prompt: 'Which hires have findings waiting for an owner look?' },
 ];
 
-// As the dashboard's buildAi: the first model is the default, the picker shows for two or more. The rows are the
+// The first model is the default, the picker shows for two or more. The rows are the
 // ones the page handed Studio, so holds_at_risk reads exactly what the widgets show.
 export function buildDeskAi(models: string[], holds: Row[], hires: Row[]): AgAiHarnessSetup {
   const adapter = openaiAdapter({ endpoint: '/api/ai', model: models[0] });

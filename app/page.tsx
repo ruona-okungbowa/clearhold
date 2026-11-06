@@ -1,75 +1,35 @@
 import Link from "next/link";
 
-const dashboard = {
-  href: "/dashboard",
-  label: "Dashboard",
-  detail: "AG Studio reports over all of the data below",
-};
-
-// One page per PayPal endpoint the demo calls, each in app/(endpoints).
-const endpoints = [
-  {
-    href: "/products",
-    label: "Catalog products",
-    detail: "GET /v1/catalogs/products",
-  },
-  { href: "/plans", label: "Billing plans", detail: "GET /v1/billing/plans" },
-  {
-    href: "/invoices",
-    label: "Invoices",
-    detail: "GET /v2/invoicing/invoices",
-  },
-  {
-    href: "/transactions",
-    label: "Transactions",
-    detail: "GET /v1/reporting/transactions",
-  },
-  { href: "/disputes", label: "Disputes", detail: "GET /v1/customer/disputes" },
-  {
-    href: "/balances",
-    label: "Balances",
-    detail: "GET /v1/reporting/balances",
-  },
-  { href: "/control-room", label: "Control Room", detail: "GET /control-room" },
+const links = [
+  { href: "/control-room", label: "Control room", detail: "Every hold, hire and finding" },
+  { href: "/disputes", label: "Disputes", detail: "PayPal disputes" },
+  // The first aged sandbox hold in scripts/seed-holds.ts.
+  { href: "/hire/LH-HAL-0101", label: "Demo hire", detail: "LH-HAL-0101" },
 ];
-
-function PageLink({
-  href,
-  label,
-  detail,
-}: {
-  href: string;
-  label: string;
-  detail: string;
-}) {
-  return (
-    <li>
-      <Link
-        href={href}
-        className="flex items-baseline justify-between gap-4 py-3 hover:text-pp-blue"
-      >
-        <span className="font-semibold">{label} →</span>
-        <code className="text-sm text-pp-muted">{detail}</code>
-      </Link>
-    </li>
-  );
-}
 
 export default function Home() {
   return (
     <main className="mx-auto w-full max-w-3xl p-16 font-paypal text-pp-ink">
-      <h1 className="text-[28px] font-semibold text-pp-navy">
-        PayPal REST APIs with AG Grid &amp; AG Studio
-      </h1>
-      <ul className="mt-6 divide-y divide-pp-border border-y border-pp-border">
-        <PageLink {...dashboard} />
-      </ul>
-      <h2 className="mt-10 text-sm font-semibold uppercase tracking-wider text-pp-muted">
-        Endpoints
-      </h2>
-      <ul className="mt-2 divide-y divide-pp-border border-y border-pp-border">
-        {endpoints.map((page) => (
-          <PageLink key={page.href} {...page} />
+      <h1 className="text-[28px] font-semibold text-pp-navy">Clearhold</h1>
+      <p className="mt-2 text-lg font-semibold">
+        Others detect damage. Clearhold settles the deposit.
+      </p>
+      <p className="mt-4 text-pp-muted">
+        A hire shop takes one PayPal hold at booking, and Clearhold compares the pick-up and return photos
+        to price any new damage against the shop&apos;s schedule. A person approves every charge, and
+        whatever isn&apos;t charged goes back to the renter.
+      </p>
+      <ul className="mt-8 divide-y divide-pp-border border-y border-pp-border">
+        {links.map(({ href, label, detail }) => (
+          <li key={href}>
+            <Link
+              href={href}
+              className="flex items-baseline justify-between gap-4 py-3 hover:text-pp-blue"
+            >
+              <span className="font-semibold">{label} →</span>
+              <span className="text-sm text-pp-muted">{detail}</span>
+            </Link>
+          </li>
         ))}
       </ul>
     </main>

@@ -1,4 +1,4 @@
-// Desk-agent evals, E19-E20: the desk agent's own instructions through the dashboard's AI route
+// Desk-agent evals, E19-E20: the desk agent's own instructions through the AI route
 // (app/api/ai/responses POST, called in-process, so the same key, model and token cap), with holds_at_risk run
 // for real over the database.
 //   npm run agent-evals    exits non-zero on any failure
