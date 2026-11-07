@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { connection } from "next/server";
 import { aiEnabled, aiModels } from "@/lib/ai";
 import { db } from "@/lib/db";
+import { amountPence } from "@/lib/hold";
 import { getSavedLayout } from "./saved-layout";
 import { ControlRoom } from "./control-room";
 
@@ -10,7 +11,7 @@ export const metadata: Metadata = { title: "Control room" };
 export default async function ControlRoomPage() {
   // Live database rows: render per request, not at build time.
   await connection();
-  const [authorizations, hires, findings, openApprovals, contests, finalCaptures, savedState] = await Promise.all([
+  const [authorizations, hires, findings, openApprovals, contests, finalCaptures, marks, frontPhotos, savedState] = await Promise.all([
     db.authorization.findMany({
       omit: { updatedAt: true },
       orderBy: { createdAt: "asc" },
@@ -29,7 +30,9 @@ export default async function ControlRoomPage() {
       select: { authorizationId: true },
     }),
     db.contest.findMany({ select: { hireId: true, note: true, photoId: true, status: true } }),
-    db.capture.findMany({ where: { finalCapture: true, amountGBP: { gt: 0 } }, select: { authorizationId: true } }),
+    db.capture.findMany({ where: { finalCapture: true, amountGBP: { gt: 0 } }, select: { authorizationId: true, amountGBP: true } }),
+    db.itemMark.findMany({ select: { id: true, itemRef: true, description: true, firstSeen: true, hireId: true, photoId: true } }),
+    db.photo.findMany({ where: { stage: "pickup", angle: "front" }, select: { id: true, hireId: true } }),
     getSavedLayout(),
   ]);
 
@@ -46,6 +49,30 @@ export default async function ControlRoomPage() {
   const decided = (h: (typeof hires)[number]) => h.status === "settled" && (charged.has(h.id) || contested.has(h.id));
   const decisionsBy = new Map<string, number>();
   for (const h of hires) if (h.staffCode && decided(h)) decisionsBy.set(h.staffCode, (decisionsBy.get(h.staffCode) ?? 0) + 1);
+
+  // Condition history: each hire's outcome and what it charged. Captured money once settled, else the findings' amounts.
+  const capturedGBP = new Map<string, number>();
+  for (const c of finalCaptures) {
+    const hireId = holdHire.get(c.authorizationId)!;
+    capturedGBP.set(hireId, (capturedGBP.get(hireId) ?? 0) + Number(c.amountGBP));
+  }
+  const inspected = new Map<string, { pence: number; ownerLook: boolean }>();
+  for (const f of findings) {
+    const x = inspected.get(f.hireId) ?? { pence: 0, ownerLook: false };
+    if (f.outcome !== "no_charge") x.pence += amountPence(f);
+    x.ownerLook ||= f.outcome === "owner_look";
+    inspected.set(f.hireId, x);
+  }
+  const frontPhoto = new Map(frontPhotos.map((p) => [p.hireId, p.id]));
+  const chargedOf = (h: (typeof hires)[number]) =>
+    capturedGBP.get(h.id) ?? (h.status === "settled" ? 0 : (inspected.get(h.id)?.pence ?? 0) / 100);
+  const outcomeOf = (h: (typeof hires)[number]) => {
+    const x = inspected.get(h.id);
+    if (contested.has(h.id)) return "contested";
+    if (!x) return "not inspected";
+    if (chargedOf(h) > 0) return "charged";
+    return x.ownerLook ? "owner look" : "clean";
+  };
 
   // Decimals don't cross to the client; GBP amounts to 2dp are exact enough as numbers.
   return (
@@ -68,6 +95,9 @@ export default async function ControlRoomPage() {
         contestedPct: contested.has(h.id) ? 100 : 0,
         // Every hire carries its staff code's total, so a row filter can keep codes with 20 or more.
         staffDecisions: h.staffCode ? (decisionsBy.get(h.staffCode) ?? 0) : 0,
+        pickupPhotoId: frontPhoto.get(h.id) ?? "",
+        outcome: outcomeOf(h),
+        chargedGBP: chargedOf(h),
       }))}
       findings={findings.map((f) => ({
         ...f,
@@ -76,6 +106,7 @@ export default async function ControlRoomPage() {
         proposedGBP: f.proposedGBP === null ? null : Number(f.proposedGBP),
         setGBP: f.setGBP === null ? null : Number(f.setGBP),
       }))}
+      marks={marks}
       savedState={savedState}
       licenseKey={process.env.AG_STUDIO}
       aiModels={aiEnabled() ? aiModels() : undefined}

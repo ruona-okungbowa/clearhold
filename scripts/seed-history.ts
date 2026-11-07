@@ -4,10 +4,12 @@
 // rows. Dates run back from today so the timeline and the weekly charts are current.
 // Every row is seeded: hires have seeded: true, holds are SEED-H-*, approvals SEED-A-*, captures SEED-C-*.
 // A re-run deletes the previous history first. seed-holds' LH-TST-* test holds and live sandbox hires are left alone.
+// Each hire is of one garment from a stock of STOCK per type, plus the demo blazer (BLZ-NAVY-40R), whose 8 hires in
+// Halifax tell the condition-history story: one of them logs KM-38-CUFF and the later ones see it and don't charge.
 
 import assert from 'node:assert/strict';
 import { db } from '../lib/db';
-import { PROMPT_VERSION } from '../lib/inspector';
+import { NEW_MARK, PROMPT_VERSION } from '../lib/inspector';
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
@@ -29,7 +31,14 @@ const SHOPS = [
   { branch: 'Wakefield', ref: 'WAK', letter: 'W', weight: 0.8, staff: ['Liam', 'Grace', 'Yusuf', 'Beth'] },
   { branch: 'Dewsbury', ref: 'DEW', letter: 'D', weight: 0.6, staff: ['Amir', 'Jo', 'Pete'] },
 ];
-const ITEMS = ['Morning suit 40R', 'Kilt outfit 38', 'Tuxedo 42L', 'Lounge suit 36S', 'Tailcoat 44R', 'Navy wool blazer, 40R', 'Highland dress 40', 'Dinner suit 38R'];
+// Garment types by ref prefix; each hire is of one garment, e.g. MS-40R-017.
+const GARMENT_TYPES = ['MS-40R', 'KLT-38', 'TUX-42L', 'LS-36S', 'TC-44R', 'HD-40', 'DS-38R'];
+const STOCK = 96; // per type: about 8 hires per garment over the 12 weeks
+const BLAZER = 'BLZ-NAVY-40R';
+const CUFF_MARK = { id: 'KM-38-CUFF', itemRef: BLAZER, description: 'Faint mark on the left cuff', firstSeen: 'hire #38' };
+// The blazer's hires, oldest first, each settled in Halifax at least 10 days after the last; the fourth logs the cuff mark.
+const BLAZER_STORY = ['clean', 'charged', 'clean', 'clean', 'clean', 'contested', 'clean', 'charged'] as const;
+const LOGS_CUFF = 3;
 const CONTEST_NOTES = [
   'That stain was there when I collected it.',
   'The button was loose at pick-up; I mentioned it at the counter.',
@@ -133,6 +142,13 @@ const cleanFinding = (): FindingSeed =>
     ? { angle: 'front', kind: 'wear', description: 'Light creasing from wear', clauseId: 'W1', severity: 'minor', confidence: 0.9, outcome: 'no_charge', reason: 'Wear is never charged', proposedGBP: null }
     : { angle: 'front', kind: 'none', description: 'No change', clauseId: null, severity: null, confidence: 0.95, outcome: 'no_charge', reason: 'No change', proposedGBP: null };
 
+// One rand() call, as the type-name pick it replaced, so every other draw (and the Risk page story) is unchanged.
+// shortcut: garments are drawn at random, so one can be out on two overlapping hires; only the blazer's are curated.
+const garment = () => {
+  const i = Math.floor(rand() * GARMENT_TYPES.length * STOCK);
+  return `${GARMENT_TYPES[i % GARMENT_TYPES.length]}-${String(Math.floor(i / GARMENT_TYPES.length) + 1).padStart(3, '0')}`;
+};
+
 const amountOf = (f: FindingSeed) => (f.outcome === 'no_charge' ? 0 : (f.setGBP ?? f.proposedGBP ?? 0));
 const totalOf = (fs: FindingSeed[]) => Math.min(DEPOSIT, fs.reduce((sum, f) => sum + amountOf(f), 0));
 
@@ -150,6 +166,8 @@ function build(now: number) {
   const captures: object[] = [];
   const contests: object[] = [];
   const decisions: { staffCode: string; contested: boolean; total: number }[] = [];
+  type Meta = { hire: { id: string; itemRef: string }; branch: string; status: string; category: string; startAt: number; returnedAt: number };
+  const meta: Meta[] = [];
 
   let n = 0;
   for (let day = 0; day < WEEKS * 7; day++) {
@@ -206,11 +224,11 @@ function build(now: number) {
         const total = totalOf(fs);
         const charges = status === 'settled' && total > 0;
 
-        hires.push({
+        const hire = {
           id,
           hireRef,
           branch: shop.branch,
-          itemRef: pick(ITEMS),
+          itemRef: garment(),
           feeGBP: FEE,
           depositGBP: DEPOSIT,
           startAt: d(startAt),
@@ -220,7 +238,9 @@ function build(now: number) {
           seeded: true,
           staffCode: out ? null : staffCode,
           createdAt: d(startAt),
-        });
+        };
+        hires.push(hire);
+        meta.push({ hire, branch: shop.branch, status, category: contested ? 'contested' : outcome, startAt, returnedAt });
         holds.push({
           id: holdId,
           hireId: id,
@@ -284,18 +304,51 @@ function build(now: number) {
       }
     }
   }
-  return { hires, holds, findings, approvals, captures, contests, decisions };
+
+  // The demo blazer: the first matching Halifax hire in each slot. Findings are added here, not drawn, so no rand().
+  const blazer: Meta[] = [];
+  for (const [i, category] of BLAZER_STORY.entries()) {
+    const from = Math.max(first + i * 10 * DAY, (blazer.at(-1)?.returnedAt ?? 0) + DAY);
+    const m = meta.find((x) => x.branch === 'Halifax' && x.status === 'settled' && x.category === category && x.startAt >= from);
+    assert.ok(m, `no settled Halifax ${category} hire for blazer slot ${i}`);
+    m.hire.itemRef = BLAZER;
+    blazer.push(m);
+  }
+  const cuff = (m: Meta, f: Partial<FindingSeed> & { knownMarkId?: string }) =>
+    findings.push({
+      hireId: m.hire.id,
+      angle: 'left-sleeve',
+      kind: 'known_mark',
+      description: CUFF_MARK.description,
+      clauseId: null,
+      severity: null,
+      box: { x: 0.42, y: 0.78, w: 0.08, h: 0.06 },
+      confidence: 0.86,
+      proposedGBP: null,
+      setGBP: null,
+      setBy: null,
+      model: MODEL,
+      promptVersion: PROMPT_VERSION,
+      createdAt: new Date(m.returnedAt + 20 * 60_000),
+      ...f,
+    });
+  cuff(blazer[LOGS_CUFF], { outcome: 'owner_look', reason: NEW_MARK });
+  for (const m of blazer.slice(LOGS_CUFF + 1))
+    cuff(m, { outcome: 'no_charge', reason: `Known mark ${CUFF_MARK.id}, on record before this hire`, knownMarkId: CUFF_MARK.id });
+
+  return { hires, holds, findings, approvals, captures, contests, decisions, cuffHireId: blazer[LOGS_CUFF].hire.id };
 }
 
 // The story the Risk page tells has to be in the data, and every amount has to be one settle() could make.
 function check(rows: ReturnType<typeof build>) {
   const { hires, findings, captures, decisions } = rows as unknown as {
-    hires: { status: string }[];
+    hires: { status: string; itemRef: string }[];
     findings: { clauseId: string | null; outcome: string; proposedGBP: number | null; setGBP: number | null }[];
     captures: { amountGBP: number; finalCapture: boolean }[];
     decisions: { staffCode: string; contested: boolean }[];
   };
   assert.ok(hires.length > 5000 && hires.length < 5800, `${hires.length} hires`);
+  assert.equal(hires.filter((h) => h.itemRef === BLAZER).length, BLAZER_STORY.length);
   for (const c of captures) assert.ok(c.amountGBP > 0 && c.amountGBP <= (c.finalCapture ? DEPOSIT : FEE));
   for (const f of findings) {
     if (f.outcome !== 'charge') continue;
@@ -323,6 +376,8 @@ async function main() {
   const history = { seeded: true, NOT: { hireRef: { startsWith: 'LH-TST-' } } };
   const seededHold = { authorizationId: { startsWith: 'SEED-H-' } };
   const removed = await db.$transaction([
+    // KM-38-CUFF predates the history (a migration made it), so it is unlinked and kept, not deleted with its hire.
+    db.itemMark.updateMany({ where: { id: CUFF_MARK.id }, data: { hireId: null } }),
     db.capture.deleteMany({ where: seededHold }),
     db.approval.deleteMany({ where: seededHold }),
     db.contest.deleteMany({ where: { hire: history } }),
@@ -346,6 +401,8 @@ async function main() {
   await insert('captures', rows.captures, (data) => db.capture.createMany({ data: data as any }));
   await insert('contests', rows.contests, (data) => db.contest.createMany({ data: data as any }));
   /* eslint-enable @typescript-eslint/no-explicit-any */
+  await db.itemMark.upsert({ where: { id: CUFF_MARK.id }, create: { ...CUFF_MARK, hireId: rows.cuffHireId }, update: { hireId: rows.cuffHireId } });
+  console.log(`  ${BLAZER}: ${BLAZER_STORY.length} hires, ${CUFF_MARK.id} logged on ${rows.cuffHireId}`);
 
   const decided = rows.decisions.length;
   const contested = rows.decisions.filter((x) => x.contested).length;

@@ -17,6 +17,7 @@ import {
   type AgDefaultRegistry,
 } from "ag-studio";
 import { AgStudio, AgStudioProvider, createWidgets } from "ag-studio-react";
+import { conditionHistoryWidget } from "@/components/studio/ConditionHistory";
 import { evidencePairWidget } from "@/components/studio/EvidencePair";
 import { holdTimelineWidget } from "@/components/studio/HoldTimeline";
 
@@ -25,6 +26,7 @@ interface ControlRoomRegistry extends AgBaseRegistry {
     | AgDefaultWidgetDefinition
     | typeof holdTimelineWidget
     | typeof evidencePairWidget
+    | typeof conditionHistoryWidget
   )[];
 }
 import { saveLayout } from "./actions";
@@ -59,6 +61,18 @@ const FINDING_FIELDS = [
   })),
 ];
 
+// Listed for the same reason: hireId and photoId are null on marks recorded before Clearhold.
+const MARK_FIELDS = ["id", "itemRef", "description", "firstSeen", "hireId", "photoId"].map((id) => ({
+  id,
+  format: "textFormat" as const,
+}));
+
+// Under the Evidence pair on the holds page.
+const CONDITION_HISTORY = {
+  widget: { type: "condition-history", dataMapping: conditionHistoryWidget.defaultState!.dataMapping },
+  ySpan: 20,
+} as const;
+
 // First visit, before anything is saved: a built-in grid of every hold with its hire, and the evidence beside it.
 const DEFAULT_STATE = {
   pages: [
@@ -85,10 +99,12 @@ const DEFAULT_STATE = {
           type: "evidence-pair",
           dataMapping: evidencePairWidget.defaultState!.dataMapping,
         },
+        3: CONDITION_HISTORY.widget,
       },
       widgetLayout: {
         1: { xTrack: 0, yTrack: 0, xSpan: 10, ySpan: 40 },
         2: { xTrack: 10, yTrack: 0, xSpan: 14, ySpan: 40 },
+        3: { xTrack: 10, yTrack: 40, xSpan: 14, ySpan: CONDITION_HISTORY.ySpan },
       },
     },
     // Risk: built-in charts over the per-hire numbers the page computes (keptPct, contestedPct, decided,
@@ -140,10 +156,10 @@ const PAGES = [
 
 const widgets = (config: AgWidgetsConfig<AgDefaultRegistry>) =>
   createWidgets<ControlRoomRegistry>({
-    additionalTypes: [holdTimelineWidget, evidencePairWidget],
+    additionalTypes: [holdTimelineWidget, evidencePairWidget, conditionHistoryWidget],
     menu: [
       ...config.menu,
-      { label: "Holds", widgetIds: ["hold-timeline", "evidence-pair"] },
+      { label: "Holds", widgetIds: ["hold-timeline", "evidence-pair", "condition-history"] },
     ],
   });
 
@@ -151,6 +167,7 @@ export function ControlRoom({
   holds,
   hires,
   findings,
+  marks,
   savedState,
   licenseKey,
   aiModels,
@@ -158,6 +175,7 @@ export function ControlRoom({
   holds: Row[];
   hires: Row[];
   findings: Row[];
+  marks: Row[];
   savedState: AgReportState<ControlRoomRegistry> | null;
   licenseKey?: string;
   aiModels?: string[];
@@ -175,6 +193,7 @@ export function ControlRoom({
         { id: "holds", data: holds },
         { id: "hires", data: hires },
         { id: "findings", data: findings, fields: FINDING_FIELDS },
+        { id: "marks", data: marks, fields: MARK_FIELDS },
       ],
       relationships: [
         {
@@ -189,9 +208,15 @@ export function ControlRoom({
           target: { tableId: "hires", fieldId: "id" },
           type: "many-to-one",
         },
+        {
+          id: "marks-hires",
+          source: { tableId: "marks", fieldId: "hireId" },
+          target: { tableId: "hires", fieldId: "id" },
+          type: "many-to-one",
+        },
       ],
     }),
-    [holds, hires, findings],
+    [holds, hires, findings, marks],
   );
   // Read once by Studio on mount. A layout saved before a field joined the evidence widget lacks its mapping,
   // which would leave the widget asking for one, so missing keys come from the widget's defaults.
@@ -199,9 +224,27 @@ export function ControlRoom({
     if (!savedState) return DEFAULT_STATE;
     // A layout saved before the Risk page existed gets it added.
     if (!savedState.pages.some((p) => p.id === "risk")) savedState.pages.push(DEFAULT_STATE.pages.find((p) => p.id === "risk")!);
+    // And one saved before Condition history gets it, under the Evidence pair (or below everything else).
+    const holdsPage = savedState.pages.find((p) => p.id === "holds") as
+      | { widgets?: Record<string, { type: string }>; widgetLayout?: Record<string, { xTrack: number; yTrack: number; xSpan: number; ySpan: number }> }
+      | undefined;
+    if (holdsPage && !Object.values(holdsPage.widgets ?? {}).some((w) => w.type === "condition-history")) {
+      const widgets = (holdsPage.widgets ??= {});
+      const layout = (holdsPage.widgetLayout ??= {});
+      const id = String(Math.max(0, ...Object.keys(widgets).map(Number).filter(Number.isFinite)) + 1);
+      const evidence = Object.keys(widgets).find((k) => widgets[k].type === "evidence-pair");
+      const under = evidence && layout[evidence];
+      const bottom = Math.max(0, ...Object.values(layout).map((l) => l.yTrack + l.ySpan));
+      widgets[id] = { ...CONDITION_HISTORY.widget };
+      layout[id] = under
+        ? { xTrack: under.xTrack, yTrack: under.yTrack + under.ySpan, xSpan: under.xSpan, ySpan: CONDITION_HISTORY.ySpan }
+        : { xTrack: 0, yTrack: bottom, xSpan: 24, ySpan: CONDITION_HISTORY.ySpan };
+    }
     for (const page of savedState.pages)
-      for (const w of Object.values(page.widgets ?? {}) as { type: string; dataMapping?: object }[])
+      for (const w of Object.values(page.widgets ?? {}) as { type: string; dataMapping?: object }[]) {
         if (w.type === "evidence-pair") w.dataMapping = { ...evidencePairWidget.defaultState!.dataMapping, ...w.dataMapping };
+        if (w.type === "condition-history") w.dataMapping = { ...conditionHistoryWidget.defaultState!.dataMapping, ...w.dataMapping };
+      }
     return savedState;
   });
 

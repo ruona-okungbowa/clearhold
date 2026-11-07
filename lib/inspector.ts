@@ -13,7 +13,7 @@ export const MODEL = 'claude-sonnet-5-5';
 export const PROMPT_VERSION = 'inspector-v1';
 export const CONFIDENCE_FLOOR = 0.75;
 export const INSPECT_FAILED = 'The inspector failed on this angle; check by hand';
-const NEW_MARK = 'Was there at pick-up and not on record: logged on this item, for a person to check';
+export const NEW_MARK = 'Was there at pick-up and not on record: logged on this item, for a person to check';
 
 // The plan's Phase 4 schema, verbatim.
 export const Finding = z.object({
