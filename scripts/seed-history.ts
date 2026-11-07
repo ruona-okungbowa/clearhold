@@ -22,14 +22,14 @@ const HOLD_DAYS = 29;
 const HIGH_CONTEST_CODE = 'H-03'; // the Halifax demo story
 const MODEL = 'seed-history'; // not a model call: marks findings this script made up
 
-// Name, hire-ref code, staff code letter, share of hires, staff. The last of each shop is part-time.
+// Name, hire-ref code, staff code letter, share of hires, staff headcount. The last of each shop is part-time.
 const SHOPS = [
-  { branch: 'Halifax', ref: 'HAL', letter: 'H', weight: 1.0, staff: ['Priya', 'Tom', 'Aisha', 'Gareth'] },
-  { branch: 'Leeds', ref: 'LEE', letter: 'L', weight: 1.4, staff: ['Imran', 'Sophie', 'Dan', 'Mei', 'Callum'] },
-  { branch: 'Bradford', ref: 'BRA', letter: 'B', weight: 1.1, staff: ['Zara', 'Owen', 'Hannah', 'Kofi'] },
-  { branch: 'Huddersfield', ref: 'HUD', letter: 'U', weight: 0.9, staff: ['Ellie', 'Raj', 'Nina'] },
-  { branch: 'Wakefield', ref: 'WAK', letter: 'W', weight: 0.8, staff: ['Liam', 'Grace', 'Yusuf', 'Beth'] },
-  { branch: 'Dewsbury', ref: 'DEW', letter: 'D', weight: 0.6, staff: ['Amir', 'Jo', 'Pete'] },
+  { branch: 'Halifax', ref: 'HAL', letter: 'H', weight: 1.0, staff: 4 },
+  { branch: 'Leeds', ref: 'LEE', letter: 'L', weight: 1.4, staff: 5 },
+  { branch: 'Bradford', ref: 'BRA', letter: 'B', weight: 1.1, staff: 4 },
+  { branch: 'Huddersfield', ref: 'HUD', letter: 'U', weight: 0.9, staff: 3 },
+  { branch: 'Wakefield', ref: 'WAK', letter: 'W', weight: 0.8, staff: 4 },
+  { branch: 'Dewsbury', ref: 'DEW', letter: 'D', weight: 0.6, staff: 3 },
 ];
 // Garment types by ref prefix; each hire is of one garment, e.g. MS-40R-017.
 const GARMENT_TYPES = ['MS-40R', 'KLT-38', 'TUX-42L', 'LS-36S', 'TC-44R', 'HD-40', 'DS-38R'];
@@ -184,11 +184,12 @@ function build(now: number) {
         const hireRef = `LH-${shop.ref}-${number}`;
 
         // Each shop's last staff member works about a quarter of the shifts.
-        const weights = shop.staff.map((_, i) => (i === shop.staff.length - 1 ? 0.25 : 1));
+        const weights = Array.from({ length: shop.staff }, (_, i) => (i === shop.staff - 1 ? 0.25 : 1));
         let r = rand() * weights.reduce((a, b) => a + b, 0);
         const staffIndex = weights.findIndex((w) => (r -= w) < 0);
         const staffCode = `${shop.letter}-${String(staffIndex + 1).padStart(2, '0')}`;
-        const approver = `${shop.staff[staffIndex]} (${staffCode})`;
+        // The staff code stays on the hire (Risk page); approvals just say "Staff", as live ones do.
+        const approver = 'Staff';
 
         const startAt = first + day * DAY + 9 * HOUR + rand() * 8 * HOUR;
         const dueBackAt = startAt + (chance(0.7) ? 3 : 4) * DAY;

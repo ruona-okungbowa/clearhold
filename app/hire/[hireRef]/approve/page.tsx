@@ -134,14 +134,14 @@ export default async function ApprovePage({ params }: PageProps<'/hire/[hireRef]
       {!settled && totalGBP > 0 && !open && (
         <form action={approveCharges.bind(null, hireRef)}>
           <button>
-            {contested ? 'Resolve the contest and approve' : 'Approve'} up to {gbp(totalGBP)} as Priya (H-01)
+            {contested ? 'Resolve the contest and approve' : 'Approve'} up to {gbp(totalGBP)} as Staff
           </button>
         </form>
       )}
       {!settled && totalGBP === 0 && findings.length > 0 && hire.status !== 'booked' && (
         <form action={releaseHold.bind(null, hireRef)}>
           {unpriced > 0 && <p>{unpriced} owner-look finding(s) have no amount: releasing means no charge for them.</p>}
-          <button>Release {gbp(remainingGBP)}, no charge, as Priya (H-01)</button>
+          <button>Release {gbp(remainingGBP)}, no charge, as Staff</button>
         </form>
       )}
 

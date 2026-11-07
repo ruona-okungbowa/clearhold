@@ -19,7 +19,8 @@ export default function Home() {
         to price any new damage against the shop&apos;s schedule. A person approves every charge, and
         whatever isn&apos;t charged goes back to the renter.
       </p>
-      <ul className="mt-8 divide-y divide-pp-border border-y border-pp-border">
+      <p className="mt-8 text-sm text-pp-muted">Staff pages need the demo passcode.</p>
+      <ul className="mt-2 divide-y divide-pp-border border-y border-pp-border">
         {links.map(({ href, label, detail }) => (
           <li key={href}>
             <Link

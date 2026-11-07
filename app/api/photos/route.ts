@@ -1,12 +1,13 @@
 // Stores one condition photo: private Vercel Blob for the bytes, a Photo row for its SHA-256 and the
 // server's clock. Re-taking an angle replaces the row; the old blob stays as history.
 // A renter's contest photo (stage "contest") needs their link as t, and the hire must not be contested yet.
-// shortcut: no sign-in yet, anyone with a hire ref can upload pick-up and return photos; gate on a session later.
+// Pick-up and return photos are the staff capture page's (/c/*), so they need the staff cookie.
 
 import { createHash } from 'node:crypto';
 import { put } from '@vercel/blob';
 import { db } from '@/lib/db';
 import { verifyRenterLink } from '@/lib/renter-link';
+import { isStaff } from '@/lib/staff';
 import { ANGLES, STAGES } from '@/lib/schedule';
 
 // Under Vercel's 4.5 MB request limit; the capture page shrinks photos well below it.
@@ -28,6 +29,7 @@ export async function POST(req: Request) {
     !(photo instanceof File)
   )
     return Response.json({ error: 'Send hireRef, stage, angle and photo' }, { status: 400 });
+  if (!contest && !(await isStaff())) return Response.json({ error: 'Staff only' }, { status: 403 });
   if (contest && (await verifyRenterLink(String(t)).catch(() => null)) !== hireRef)
     return Response.json({ error: 'This link has expired' }, { status: 403 });
   const ext = TYPES[photo.type];

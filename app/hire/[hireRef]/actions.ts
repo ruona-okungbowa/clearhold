@@ -5,17 +5,19 @@ import { cancelOpenApprovals, createApproval, pence } from '@/lib/approval';
 import { audit, auditScope } from '@/lib/audit';
 import { db } from '@/lib/db';
 import { Prisma } from '@/lib/generated/prisma/client';
-import { amountPence, captureApproved, holdOf, releaseHire, resolveContest } from '@/lib/hold';
+import { amountPence, captureApproved, holdOf, releaseHire, resolveContest, settleHold } from '@/lib/hold';
 import { inspect, isNewMark, MODEL, personPence, PROMPT_VERSION } from '@/lib/inspector';
 import { CLAUSES } from '@/lib/schedule';
+import { requireStaff } from '@/lib/staff';
 
-// shortcut: no sign-in yet, so every approval is Priya's; use the signed-in staff member once auth exists.
-const STAFF = 'Priya (H-01)';
+// shortcut: the demo passcode doesn't say who signed in, so every approval is just "Staff"; name the person once accounts exist.
+const STAFF = 'Staff';
 
 const inScope = (hireRef: string, work: () => Promise<void>) => auditScope.run(hireRef, work).then(() => refresh());
 
 // Pick-up: the fee is taken through the same approval gate as any other capture, and the hold stays open.
 export async function handOver(hireRef: string) {
+  await requireStaff();
   await inScope(hireRef, async () => {
     const { hire, auth } = await holdOf(hireRef);
     if (hire.status !== 'booked') throw new Error(`${hireRef} is ${hire.status}, not booked`);
@@ -27,6 +29,7 @@ export async function handOver(hireRef: string) {
 }
 
 export async function runInspector(hireRef: string) {
+  await requireStaff();
   await inScope(hireRef, async () => {
     const { hire, auth, remainingGBP } = await holdOf(hireRef);
     if (hire.status === 'settled') throw new Error(`${hireRef} is already settled`);
@@ -79,6 +82,7 @@ export async function runInspector(hireRef: string) {
 // A person lowers the AI's charge or prices an owner-look finding (lib/inspector.ts personPence holds the rules),
 // against what the other findings leave of the hold. Nothing moves until the total is signed in approveCharges.
 export async function setAmount(hireRef: string, findingId: string, form: FormData) {
+  await requireStaff();
   await inScope(hireRef, async () => {
     const { hire, auth, remainingGBP } = await holdOf(hireRef);
     if (hire.status === 'settled') throw new Error(`${hireRef} is already settled`);
@@ -118,11 +122,13 @@ export async function setAmount(hireRef: string, findingId: string, form: FormDa
 
 // One tap: nothing to charge, so the rest of the hold goes back.
 export async function releaseHold(hireRef: string) {
+  await requireStaff();
   await inScope(hireRef, () => releaseHire(hireRef, STAFF));
 }
 
 // A signed approval for the total of the AI's charges and any amounts a person set, as the final capture.
 export async function approveCharges(hireRef: string) {
+  await requireStaff();
   await inScope(hireRef, async () => {
     const { hire, auth, remainingGBP } = await holdOf(hireRef);
     if (hire.status === 'settled') throw new Error(`${hireRef} is already settled`);
@@ -143,17 +149,8 @@ export async function approveCharges(hireRef: string) {
   });
 }
 
-// Final capture of the approved amount; PayPal releases the rest of the hold.
+// Final capture of the approved amount (lib/hold.ts settleHold); PayPal releases the rest of the hold.
 export async function settleHire(hireRef: string) {
-  await inScope(hireRef, async () => {
-    const { hire, auth } = await holdOf(hireRef);
-    if (hire.status === 'contested') throw new Error(`The renter contested ${hireRef}: resolve it and approve again before settling`);
-    const approval = await db.approval.findFirst({
-      where: { authorizationId: auth.id, finalCapture: true, usedAt: null, expiresAt: { gt: new Date() } },
-      orderBy: { createdAt: 'desc' },
-    });
-    if (!approval) throw new Error('No valid approval for a final capture: approve the charges first');
-    await captureApproved(approval.token, approval.maxGBP.toFixed(2));
-    await db.hire.update({ where: { id: hire.id }, data: { status: 'settled', returnedAt: hire.returnedAt ?? new Date() } });
-  });
+  await requireStaff();
+  await inScope(hireRef, () => settleHold(hireRef));
 }

@@ -1,6 +1,5 @@
 // Staff: every case to answer. A contested hire, or a PayPal sandbox dispute matched to a hire through the capture id
 // PayPal names as seller_transaction_id; a dispute on a capture we don't have is listed as "not ours".
-// shortcut: no sign-in yet, like the control room; gate staff pages on a session later.
 
 import type { Metadata } from 'next';
 import Link from 'next/link';
