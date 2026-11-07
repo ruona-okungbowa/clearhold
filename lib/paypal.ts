@@ -107,6 +107,11 @@ export type Dispute = {
   seller_response_due_date?: string;
 };
 
+// The detail fields the list leaves out; seller_transaction_id is our capture id.
+export type DisputeDetails = Dispute & { disputed_transactions?: { seller_transaction_id?: string }[] };
+
+export const getDispute = (id: string) => get<DisputeDetails>(`/v1/customer/disputes/${encodeURIComponent(id)}`);
+
 // Disputes page by cursor: follow the `next` link until there is none.
 export async function listDisputes(): Promise<Dispute[]> {
   const disputes: Dispute[] = [];

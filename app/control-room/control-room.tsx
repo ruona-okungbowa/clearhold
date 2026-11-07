@@ -4,6 +4,7 @@
 // hires are two sync sources linked by hireId. Save stores api.getState() in a StudioLayout row, and
 // the page passes that row back as initialState on the next load.
 
+import Link from "next/link";
 import { useMemo, useRef, useState } from "react";
 import {
   AgStudioAiModule,
@@ -287,6 +288,9 @@ export function ControlRoom({
                 {label}
               </button>
             ))}
+            <Link href="/disputes" className="rounded px-3 py-1 font-medium hover:bg-black/5">
+              Disputes
+            </Link>
           </nav>
         </div>
         <div className="flex items-center gap-3 text-sm">

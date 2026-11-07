@@ -56,11 +56,12 @@ export async function createApproval(
 
 export type ApprovalClaims = { jti: string; sub: string; max: string; final: boolean; approver: string; exp: number };
 
-// Signature, issuer, algorithm and expiry; throws ApprovalError on any failure.
-export async function verifyApproval(token: string): Promise<ApprovalClaims> {
+// Signature, issuer, algorithm and expiry; throws ApprovalError on any failure. `at` checks expiry as of then
+// (the evidence pack checks a used approval's signature as of when it was created).
+export async function verifyApproval(token: string, at?: Date): Promise<ApprovalClaims> {
   let payload;
   try {
-    ({ payload } = await jwtVerify(token, key(), { issuer: ISSUER, algorithms: ['HS256'] }));
+    ({ payload } = await jwtVerify(token, key(), { issuer: ISSUER, algorithms: ['HS256'], currentDate: at }));
   } catch (err) {
     throw new ApprovalError(`Approval rejected: ${err instanceof Error ? err.message : String(err)}`);
   }

@@ -71,7 +71,8 @@ const OUTCOMES: Record<string, string> = { charge: 'Charge', owner_look: 'Owner 
 const LINE = '1px solid rgb(128 128 128 / 0.35)';
 const button = { padding: '2px 8px', border: LINE, borderRadius: 4, background: 'none', color: 'inherit', font: 'inherit', cursor: 'pointer' };
 
-function Photo({ id, label, box }: { id: string | null; label: string; box?: Box | null }) {
+// Also the dispute page's photo pairs.
+export function Photo({ id, label, box }: { id: string | null; label: string; box?: Box | null }) {
   return (
     <figure style={{ margin: 0, minWidth: 0 }}>
       <figcaption style={{ fontSize: 11, opacity: 0.7, marginBottom: 2 }}>{label}</figcaption>
