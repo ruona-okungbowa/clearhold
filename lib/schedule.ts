@@ -27,13 +27,14 @@ export const ITEMS: Record<
   },
 };
 
+// label goes to the inspector's prompt; short and hint are what the capture screen shows.
 export const ANGLES = [
-  { id: 'front', label: 'Front, buttoned, on the hanger' },
-  { id: 'back', label: 'Back' },
-  { id: 'left-sleeve', label: 'Left sleeve, including the cuff' },
-  { id: 'right-sleeve', label: 'Right sleeve, including the cuff' },
-  { id: 'collar-cuffs', label: 'Close-up of the collar and lapels' },
-  { id: 'care-label', label: 'Care label and barcode tag' },
+  { id: 'front', label: 'Front, buttoned, on the hanger', short: 'Front', hint: 'Buttoned, on the hanger, the whole jacket in frame' },
+  { id: 'back', label: 'Back', short: 'Back', hint: 'Turn the hanger round, the whole jacket in frame' },
+  { id: 'left-sleeve', label: 'Left sleeve, including the cuff', short: 'Left sleeve', hint: 'The whole sleeve, including the cuff' },
+  { id: 'right-sleeve', label: 'Right sleeve, including the cuff', short: 'Right sleeve', hint: 'The whole sleeve, including the cuff' },
+  { id: 'collar-cuffs', label: 'Close-up of the collar and lapels', short: 'Collar and lapels', hint: 'Close up, both lapels in frame' },
+  { id: 'care-label', label: 'Care label and barcode tag', short: 'Care label', hint: 'Inside the jacket, the label and barcode tag sharp' },
 ] as const;
 
 export const STAGES = ['pickup', 'return'] as const;

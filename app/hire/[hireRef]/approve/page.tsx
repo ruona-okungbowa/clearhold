@@ -1,174 +1,238 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ActionButton } from '@/app/(lab)/action-button';
+import { Chip, gbp, stamp, staffUrl, StaffPage, timeLabel, Who } from '@/app/(lab)/chrome';
+import { EvidencePair, EvidencePhoto, type Box } from '@/app/(lab)/evidence';
+import s from '@/app/(lab)/screens.module.css';
+import st from '@/app/(lab)/staff.module.css';
+import w from '@/app/(lab)/wire.module.css';
 import { verifyApproval } from '@/lib/approval';
+import { itemName } from '@/lib/catalogue';
 import { db } from '@/lib/db';
-import { holdOf } from '@/lib/hold';
+import { amountPence, holdOf } from '@/lib/hold';
 import { renterLink } from '@/lib/renter-link';
 import { ANGLES, CLAUSES } from '@/lib/schedule';
-import { approveCharges, releaseHold, setAmount, settleHire } from '../actions';
+import { findingChip } from '@/lib/staff-view';
+import { approveAction, releaseAction, settleAction } from '../actions';
+import { AmountField } from './amount-field';
 import { CopyLink } from './copy-link';
 
 export const metadata: Metadata = { title: 'Approve charges' };
 
-const gbp = (n: number) => `£${n.toFixed(2)}`;
 const order = new Map<string, number>(ANGLES.map((a, i) => [a.id, i]));
+const angleName = (id: string) => ANGLES.find((a) => a.id === id)?.short ?? id;
+const photo = (id: string) => `/api/photos/${id}`;
+const openOf = <T extends { usedAt: Date | null; expiresAt: Date; finalCapture: boolean }>(approvals: T[]) => {
+  const now = new Date();
+  return approvals.find((a) => a.finalCapture && !a.usedAt && a.expiresAt > now) ?? null;
+};
 
 export default async function ApprovePage({ params }: PageProps<'/hire/[hireRef]/approve'>) {
   const { hireRef } = await params;
   const hold = await holdOf(hireRef).catch((err: Error) => (err.message.startsWith('No hold') ? notFound() : Promise.reject(err)));
-  const { hire, auth, remainingGBP } = hold;
+  const { hire, auth, captures, remainingGBP } = hold;
   const [findings, approvals, contest] = await Promise.all([
     db.finding.findMany({ where: { hireId: hire.id } }),
-    db.approval.findMany({ where: { authorizationId: auth.id }, orderBy: { createdAt: 'asc' } }),
+    db.approval.findMany({ where: { authorizationId: auth.id }, orderBy: { createdAt: 'desc' } }),
     db.contest.findUnique({ where: { hireId: hire.id } }),
   ]);
   findings.sort((a, b) => (order.get(a.angle) ?? 9) - (order.get(b.angle) ?? 9));
-  const totalGBP = findings.reduce((sum, f) => sum + Number(f.setGBP ?? f.proposedGBP ?? 0), 0);
-  const checks = await Promise.all(
-    approvals.map((a) =>
-      verifyApproval(a.token).then(
-        (c) => `signature verifies (sub ${c.sub}, max £${c.max}, expires ${new Date(c.exp * 1000).toLocaleTimeString('en-GB')})`,
-        (err: Error) => err.message,
-      ),
-    ),
-  );
-  const now = new Date();
-  const open = approvals.find((a) => a.finalCapture && !a.usedAt && a.expiresAt > now);
+
   const settled = hire.status === 'settled';
-  const unpriced = findings.filter((f) => f.outcome === 'owner_look' && f.setGBP === null).length;
   const contested = contest?.status === 'open';
-  // The renter's link lives exactly as long as the approval it shows them.
-  const link = open && !settled ? `/r/${await renterLink(hireRef, open.expiresAt)}` : null;
+  const open = settled ? null : openOf(approvals);
+  const signed = open && (await verifyApproval(open.token).then(() => true, () => false));
+  const link = open ? `/r/${await renterLink(hireRef, open.expiresAt)}` : null;
+  const finalCapture = captures.find((c) => c.finalCapture && c.authorizationId === auth.id);
+  const totalPence = findings.reduce((sum, f) => sum + amountPence(f), 0);
+  const total = settled ? Number(finalCapture?.amountGBP ?? 0) : totalPence / 100;
+  // After settling, what was left of the hold went back; before, it is what the hold keeps minus the total.
+  const release = settled ? remainingGBP : remainingGBP - total;
+  const unpriced = findings.filter((f) => f.outcome === 'owner_look' && f.setGBP === null).length;
+  const locked = settled || Boolean(open);
+  const canRelease = !settled && !open && findings.length > 0 && totalPence === 0 && ['out', 'returned', 'contested'].includes(hire.status);
 
   return (
-    <main>
-      <p>
-        <Link href={`/hire/${hireRef}`}>← Hire {hireRef}</Link>
-      </p>
-      <h1>Findings for {hireRef}</h1>
-      <p>
-        Hold {auth.id}: {auth.status}. {settled ? 'Released' : 'Still held'}: {gbp(remainingGBP)}.
-      </p>
-
-      {contest && (
-        <section>
-          <h2>{contested ? 'The renter contests these charges' : `Contest resolved by ${contest.resolvedBy}`}</h2>
-          <p>
-            {contest.findingId ? `On ${findings.find((f) => f.id === contest.findingId)?.angle ?? 'a replaced finding'}: ` : 'On the charges as a whole: '}
-            {contest.note}
+    <StaffPage current="hire">
+      <div className={w.sHead}>
+        <div>
+          <p className={`${w.sSub} ${st.crumb}`}>
+            <Link href={staffUrl.hire(hireRef)}>{hireRef}</Link> / Findings
           </p>
-          {contest.photoId && (
-            // eslint-disable-next-line @next/next/no-img-element -- a private photo of unknown size, not for the image optimiser
-            <img src={`/api/photos/${contest.photoId}`} alt="The renter's contest photo" style={{ maxWidth: 320 }} />
+          <h1 className={w.sH1}>Findings for {hireRef}</h1>
+          <p className={w.sSub}>
+            {itemName(hire.itemRef)} · Ledgerton {hire.branch} · {gbp(remainingGBP)} {settled ? 'released' : 'still held'}
+          </p>
+        </div>
+      </div>
+
+      <div className={st.apprGrid}>
+        <div className={st.stack}>
+          {contest && (
+            <section className={w.panel} aria-labelledby="contest-title">
+              <div className={w.panelHead}>
+                <h2 id="contest-title" className={w.sH2}>
+                  {contested ? 'The renter contests these charges' : `Contest resolved by ${contest.resolvedBy}`}
+                </h2>
+                <Chip kind={contested ? 'stLook' : 'stOk'}>{contested ? 'Look again' : 'Resolved'}</Chip>
+              </div>
+              <p className={st.note}>
+                {contest.findingId ? `On ${angleName(findings.find((f) => f.id === contest.findingId)?.angle ?? '')}: ` : 'On the charges as a whole: '}“{contest.note}”
+              </p>
+              {contest.photoId && (
+                <div className={st.sPairWide}>
+                  <EvidencePhoto src={photo(contest.photoId)} alt="The renter’s contest photo" />
+                </div>
+              )}
+              {contested && <p className={w.sSub}>Lower or remove charges below, then approve (that resolves it) or release the hold. A contest can’t raise the total.</p>}
+            </section>
           )}
-          {contested && <p>Lower or remove charges below, then approve (that resolves it) or release the hold. A contest cannot raise the total.</p>}
-        </section>
-      )}
 
-      {findings.length === 0 ? (
-        <p>No findings yet. Run the inspector from the hire page.</p>
-      ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Angle</th>
-              <th>Kind</th>
-              <th>What the inspector saw</th>
-              <th>Clause</th>
-              <th>Severity</th>
-              <th>Confidence</th>
-              <th>Outcome</th>
-              <th>Amount</th>
-              <th>Why</th>
-              <th>Photos (pick-up / return)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {findings.map((f) => {
-              const clause = CLAUSES.find((c) => c.id === f.clauseId);
-              return (
-                <tr key={f.id}>
-                  <td>{f.angle}</td>
-                  <td>{f.kind}</td>
-                  <td>{f.description}</td>
-                  <td>{f.clauseId && `${f.clauseId}: ${clause?.name ?? 'not in schedule'}`}</td>
-                  <td>{f.severity}</td>
-                  <td>{f.confidence.toFixed(2)}</td>
-                  <td>{f.outcome === 'owner_look' ? 'Owner look' : f.outcome === 'charge' ? 'Charge' : 'No charge'}</td>
-                  <td>
-                    {f.setGBP === null
-                      ? f.proposedGBP === null
-                        ? '—'
-                        : gbp(Number(f.proposedGBP))
-                      : f.outcome === 'charge'
-                        ? `${gbp(Number(f.setGBP))}, lowered from ${gbp(Number(f.proposedGBP))} by ${f.setBy}`
-                        : `${gbp(Number(f.setGBP))}, set by ${f.setBy}`}
-                    {(f.outcome === 'owner_look' || f.outcome === 'charge') && clause?.chargeable && !settled && (
-                      <form action={setAmount.bind(null, hireRef, f.id)}>
-                        <label>
-                          {f.outcome === 'charge'
-                            ? `Lower to, in £ (up to ${gbp(Number(f.proposedGBP))}; 0 waives it, blank restores it)`
-                            : `Amount in £ (${clause.lowGBP === clause.highGBP ? gbp(clause.lowGBP) : `${gbp(clause.lowGBP)}–${gbp(clause.highGBP)}`}, capped at the hold; blank clears)`}{' '}
-                          <input className="border" name="amountGBP" type="number" min="0" step="0.01" defaultValue={f.setGBP === null ? '' : Number(f.setGBP).toFixed(2)} />
-                        </label>{' '}
-                        <button>{f.outcome === 'charge' ? 'Lower' : 'Set amount'}</button>
-                      </form>
+          {findings.length === 0 ? (
+            <section className={w.panel}>
+              <p className={w.sSub}>
+                No findings yet. Take the return photos, and the inspector runs when they’re sent.{' '}
+                <Link href={staffUrl.capture(hireRef, 'return')}>Return photos</Link>
+              </p>
+            </section>
+          ) : (
+            <ol className={st.stack}>
+              {findings.map((f) => {
+                const clause = CLAUSES.find((c) => c.id === f.clauseId);
+                const [chip, label] = findingChip(f);
+                const pair = f.pickupPhotoId || f.returnPhotoId;
+                const priceable = (f.outcome === 'charge' || f.outcome === 'owner_look') && clause?.chargeable;
+                const cls = f.outcome === 'charge' ? st.fCharge : f.outcome === 'owner_look' ? st.fLook : '';
+                return (
+                  <li key={f.id} className={`${st.fCard} ${cls} ${pair ? '' : st.single}`}>
+                    {pair && (
+                      <EvidencePair pickupId={f.pickupPhotoId} returnId={f.returnPhotoId} box={f.box as Box} what={angleName(f.angle)} photo={photo} className={st.sPair} />
                     )}
-                  </td>
-                  <td>{f.reason}</td>
-                  <td>
-                    {f.pickupPhotoId} / {f.returnPhotoId}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
+                    <div className={st.fBody}>
+                      <div className={st.fTop}>
+                        <h2 className={w.sH2}>
+                          {angleName(f.angle)} · {f.kind.replace('_', ' ')}
+                        </h2>
+                        <Chip kind={chip}>{label}</Chip>
+                      </div>
+                      <div className={st.saw}>
+                        <Who ai>Inspector saw</Who>
+                        <p>{f.description}</p>
+                        <p className={w.sSub}>{f.reason}</p>
+                      </div>
+                      <p className={st.fMeta}>
+                        {clause && (
+                          <span>
+                            Clause{' '}
+                            <b>
+                              {clause.id} · {clause.name.toLowerCase()}
+                              {clause.chargeable && `, ${clause.lowGBP === clause.highGBP ? `£${clause.lowGBP}` : `£${clause.lowGBP}–£${clause.highGBP}`}`}
+                            </b>
+                          </span>
+                        )}
+                        <span>
+                          Confidence <b>{f.confidence.toFixed(2)}</b>
+                          <span className={st.conf} aria-hidden="true">
+                            <span style={{ width: `${f.confidence * 100}%` }} />
+                          </span>
+                        </span>
+                      </p>
+                      {priceable ? (
+                        <AmountField
+                          hireRef={hireRef}
+                          findingId={f.id}
+                          charge={f.outcome === 'charge'}
+                          proposed={f.proposedGBP === null ? null : Number(f.proposedGBP)}
+                          set={f.setGBP === null ? null : Number(f.setGBP)}
+                          band={[clause.lowGBP, clause.highGBP]}
+                          locked={locked}
+                        />
+                      ) : (
+                        <p className={w.sSub}>{f.kind === 'wear' ? 'Creases, lint and light pilling are wear. Never chargeable.' : 'Never charged.'}</p>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          )}
+        </div>
 
-      <h2>Approve</h2>
-      <p>
-        Total to approve: <strong>{gbp(totalGBP)}</strong>. An owner-look finding counts only once a person sets its amount.
-      </p>
-      {!settled && totalGBP > 0 && !open && (
-        <form action={approveCharges.bind(null, hireRef)}>
-          <button>
-            {contested ? 'Resolve the contest and approve' : 'Approve'} up to {gbp(totalGBP)} as Staff
-          </button>
-        </form>
-      )}
-      {!settled && totalGBP === 0 && findings.length > 0 && hire.status !== 'booked' && (
-        <form action={releaseHold.bind(null, hireRef)}>
-          {unpriced > 0 && <p>{unpriced} owner-look finding(s) have no amount: releasing means no charge for them.</p>}
-          <button>Release {gbp(remainingGBP)}, no charge, as Staff</button>
-        </form>
-      )}
+        <aside className={s.sideSticky}>
+          <section className={w.panel} aria-labelledby="tot">
+            <h2 id="tot" className={w.sH2}>
+              {settled ? 'Settled' : 'Total to approve'}
+            </h2>
+            <p className={st.total} aria-live="polite">
+              {gbp(total)}
+            </p>
+            <div className={w.meter} role="img" aria-label={`${settled ? 'Captured' : 'To capture'} ${gbp(total)}, ${settled ? 'released' : 'to release'} ${gbp(release)}`}>
+              {total > 0 && <span className={settled ? w.taken : w.held} style={{ flexGrow: total }} />}
+              {release > 0 && <span className={w.released} style={{ flexGrow: release }} />}
+            </div>
+            <dl className={w.kv}>
+              <div>
+                <dt>{settled ? 'Captured' : 'Will capture'}</dt>
+                <dd>{gbp(total)}</dd>
+              </div>
+              <div>
+                <dt>{settled ? 'Released' : 'Will release'}</dt>
+                <dd>{gbp(release)}</dd>
+              </div>
+            </dl>
+            {!settled && unpriced > 0 && !open && (
+              <p className={w.sSub}>
+                {unpriced} owner-look finding{unpriced === 1 ? '' : 's'} with no amount: {unpriced === 1 ? 'it charges' : 'they charge'} nothing unless you set one.
+              </p>
+            )}
 
-      <h2>Approval records</h2>
-      {approvals.length === 0 ? (
-        <p>None yet.</p>
-      ) : (
-        <ol>
-          {approvals.map((a, i) => (
-            <li key={a.id}>
-              {a.approver} approved up to {gbp(Number(a.maxGBP))} from hold {a.authorizationId}
-              {a.finalCapture ? ' (final capture)' : ' (fee, not final)'}; expires {a.expiresAt.toLocaleString('en-GB')};{' '}
-              {a.usedAt ? `used ${a.usedAt.toLocaleString('en-GB')}` : 'unused'}. Check: {checks[i]}.
-            </li>
-          ))}
-        </ol>
-      )}
+            {!settled && !open && totalPence > 0 && (
+              <ActionButton action={approveAction.bind(null, hireRef)}>
+                {contested ? 'Resolve the contest and approve' : 'Approve'} up to {gbp(total)}
+              </ActionButton>
+            )}
+            {canRelease && <ActionButton action={releaseAction.bind(null, hireRef)}>Release {gbp(remainingGBP)}, no charge</ActionButton>}
 
-      {link && <CopyLink path={link} />}
+            {open && (
+              <>
+                <p className={st.ok}>
+                  Approved by {open.approver} at {timeLabel(open.createdAt)} · signed record, max {gbp(Number(open.maxGBP))}, expires {stamp(open.expiresAt)} ·{' '}
+                  {signed ? 'signature verifies' : 'signature does not verify'}.
+                </p>
+                {link && <CopyLink path={link} />}
+                <p className={w.sSub}>The renter can accept or contest once before the approval expires. Capture waits for their answer or the deadline.</p>
+                <ActionButton action={settleAction.bind(null, hireRef)}>
+                  Capture {gbp(Number(open.maxGBP))} (final) and release {gbp(remainingGBP - Number(open.maxGBP))}
+                </ActionButton>
+                {link && (
+                  <Link href={link} className={w.btnGhost}>
+                    See what the renter sees
+                  </Link>
+                )}
+              </>
+            )}
+            {settled && (
+              <p className={st.ok}>
+                Settled. {finalCapture ? `PayPal capture final at ${stamp(finalCapture.createdAt)}; the rest of the hold is voided.` : 'The hold was released with no charge.'}
+              </p>
+            )}
+          </section>
 
-      {open && !settled && (
-        <form action={settleHire.bind(null, hireRef)}>
-          <button>
-            Capture {gbp(Number(open.maxGBP))} (final) and release {gbp(remainingGBP - Number(open.maxGBP))}
-          </button>
-        </form>
-      )}
-    </main>
+          <section className={w.panel} aria-labelledby="rules-title">
+            <h2 id="rules-title" className={w.sH2}>
+              Rules on this page
+            </h2>
+            <ul className={st.rules}>
+              <li>You can lower or waive an AI amount, never raise it.</li>
+              <li>Owner-look findings charge nothing unless you set an amount.</li>
+              <li>The total can’t pass what’s still held.</li>
+              <li>Wear and known marks are never chargeable.</li>
+              <li>Your approval is signed and expires in 48 hours.</li>
+            </ul>
+          </section>
+        </aside>
+      </div>
+    </StaffPage>
   );
 }

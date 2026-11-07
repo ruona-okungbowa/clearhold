@@ -7,7 +7,8 @@ import { db } from '@/lib/db';
 import { Prisma } from '@/lib/generated/prisma/client';
 import { amountPence, captureApproved, holdOf, releaseHire, resolveContest, settleHold } from '@/lib/hold';
 import { inspect, isNewMark, MODEL, personPence, PROMPT_VERSION } from '@/lib/inspector';
-import { CLAUSES } from '@/lib/schedule';
+import { refusal } from '@/lib/refusal';
+import { ANGLES, CLAUSES } from '@/lib/schedule';
 import { requireStaff } from '@/lib/staff';
 
 // shortcut: the demo passcode doesn't say who signed in, so every approval is just "Staff"; name the person once accounts exist.
@@ -153,4 +154,52 @@ export async function approveCharges(hireRef: string) {
 export async function settleHire(hireRef: string) {
   await requireStaff();
   await inScope(hireRef, () => settleHold(hireRef));
+}
+
+async function sixPhotos(hireRef: string, stage: 'pickup' | 'return') {
+  const n = await db.photo.count({ where: { hire: { hireRef }, stage } });
+  if (n < ANGLES.length) throw new Error(`Only ${n} of ${ANGLES.length} ${stage === 'pickup' ? 'pick-up' : 'return'} photos are stored`);
+}
+
+// The capture screen's Send on pick-up: all six photos on record, then the hand-over takes the fee.
+export async function finishPickup(hireRef: string) {
+  return refusal(
+    (async () => {
+      await requireStaff();
+      await sixPhotos(hireRef, 'pickup');
+      await handOver(hireRef);
+    })(),
+  );
+}
+
+// The capture screen's Send on return: all six photos on record, the hire marked returned, then the inspector runs.
+export async function finishReturn(hireRef: string) {
+  return refusal(
+    (async () => {
+      await requireStaff();
+      await sixPhotos(hireRef, 'return');
+      const { count } = await db.hire.updateMany({ where: { hireRef, status: 'out' }, data: { status: 'returned', returnedAt: new Date() } });
+      if (count) await auditScope.run(hireRef, () => audit({ actor: 'human', type: 'hire.returned', summary: `${STAFF} took the six return photos` }));
+      await runInspector(hireRef);
+    })(),
+  );
+}
+
+// Refusal-returning wrappers for the hire and approve screens' buttons.
+export async function runInspectorAction(hireRef: string) {
+  return refusal(runInspector(hireRef));
+}
+export async function releaseAction(hireRef: string) {
+  return refusal(releaseHold(hireRef));
+}
+export async function approveAction(hireRef: string) {
+  return refusal(approveCharges(hireRef));
+}
+export async function settleAction(hireRef: string) {
+  return refusal(settleHire(hireRef));
+}
+export async function setAmountAction(hireRef: string, findingId: string, amountGBP: string) {
+  const form = new FormData();
+  form.set('amountGBP', amountGBP);
+  return refusal(setAmount(hireRef, findingId, form));
 }
