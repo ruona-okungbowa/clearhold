@@ -6,8 +6,10 @@
 import { z } from 'zod';
 import { audit, auditScope } from '@/lib/audit';
 import { buildEvidencePack, draftResponse, validateDraft, type Draft } from '@/lib/evidence-pack';
+import { requireStaff } from '@/lib/staff';
 
 export async function draftDisputeResponse(hireRef: string): Promise<{ draft: Draft } | { rejected: string }> {
+  await requireStaff();
   const ref = z.string().min(1).max(40).parse(hireRef); // reachable by direct POST
   return auditScope.run(ref, async () => {
     const pack = await buildEvidencePack(ref);

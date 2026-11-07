@@ -84,6 +84,20 @@ export async function captureApproved(token: string, amountGBP: string) {
   return c;
 }
 
+// Final capture of the approved amount; PayPal releases the rest of the hold. Callers check who may do this:
+// staff through settleHire, the renter through their signed link (app/r/[token]/actions.ts acceptCharges).
+export async function settleHold(hireRef: string) {
+  const { hire, auth } = await holdOf(hireRef);
+  if (hire.status === 'contested') throw new Error(`The renter contested ${hireRef}: resolve it and approve again before settling`);
+  const approval = await db.approval.findFirst({
+    where: { authorizationId: auth.id, finalCapture: true, usedAt: null, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (!approval) throw new Error('No valid approval for a final capture: approve the charges first');
+  await captureApproved(approval.token, approval.maxGBP.toFixed(2));
+  await db.hire.update({ where: { id: hire.id }, data: { status: 'settled', returnedAt: hire.returnedAt ?? new Date() } });
+}
+
 // A person's one tap on a return with nothing to charge: what is left of the hold goes back and the hire closes.
 // Needs an inspection on record and the fee already taken, because a void also gives up an uncaptured fee.
 export async function releaseHire(hireRef: string, approver: string) {
@@ -107,8 +121,8 @@ export async function releaseHire(hireRef: string, approver: string) {
 // Staff answered the renter's contest by approving a total no higher than the one contested, or by releasing the hold.
 // The hire leaves "contested", so Settle works again; the contest row stays, so the renter gets no second one.
 export async function resolveContest(hireId: string, outcome: string) {
-  // shortcut: no sign-in yet, so every resolution is Priya's, as in app/hire/[hireRef]/actions.ts.
-  const resolvedBy = 'Priya (H-01)';
+  // shortcut: the demo passcode doesn't say who signed in, so every resolution is just "Staff", as in app/hire/[hireRef]/actions.ts.
+  const resolvedBy = 'Staff';
   await db.$transaction([
     db.contest.update({ where: { hireId }, data: { status: 'resolved', resolvedBy } }),
     db.hire.update({ where: { id: hireId }, data: { status: 'returned' } }),

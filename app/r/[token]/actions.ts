@@ -1,16 +1,15 @@
 'use server';
 
-// The renter's two answers to the charges, each checked against their signed link: Accept runs the staff Settle,
+// The renter's two answers to the charges, each checked against their signed link: Accept runs the same final capture as staff (settleHold),
 // Contest (once per hire) pulls the approval back to staff. Refusals come back as text for the page to show.
 
 import { refresh } from 'next/cache';
 import { z } from 'zod';
-import { settleHire } from '@/app/hire/[hireRef]/actions';
 import { cancelOpenApprovals } from '@/lib/approval';
 import { audit, auditScope } from '@/lib/audit';
 import { db } from '@/lib/db';
 import { Prisma } from '@/lib/generated/prisma/client';
-import { holdOf } from '@/lib/hold';
+import { holdOf, settleHold } from '@/lib/hold';
 import { refusal } from '@/lib/refusal';
 import { verifyRenterLink } from '@/lib/renter-link';
 
@@ -36,7 +35,8 @@ export async function acceptCharges(token: string, approvalId: string) {
         orderBy: { createdAt: 'desc' },
       });
       if (open?.id !== approvalId) throw new Error('The charges changed since you opened this page; reload it to see them');
-      await settleHire(hireRef);
+      await auditScope.run(hireRef, () => settleHold(hireRef));
+      refresh();
       await audit({ hireRef, actor: 'human', type: 'renter.accepted', summary: `Renter accepted the £${open.maxGBP.toFixed(2)} charge` });
     })(),
   );

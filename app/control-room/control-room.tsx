@@ -30,6 +30,7 @@ interface ControlRoomRegistry extends AgBaseRegistry {
     | typeof conditionHistoryWidget
   )[];
 }
+import { signOut } from "@/app/staff-login/actions";
 import { saveLayout } from "./actions";
 import { buildDeskAi } from "./desk-agent";
 
@@ -311,6 +312,11 @@ export function ControlRoom({
           >
             Save layout
           </button>
+          <form action={signOut}>
+            <button type="submit" className="underline hover:text-black/70">
+              Sign out
+            </button>
+          </form>
         </div>
       </header>
       <div className="min-h-0 flex-1">
