@@ -1,31 +1,37 @@
 import type { Metadata } from 'next';
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { RenterPage } from '@/app/(lab)/chrome';
+import { itemName } from '@/lib/catalogue';
 import { db } from '@/lib/db';
-import { ANGLES, STAGES } from '@/lib/schedule';
-import { CaptureForm } from './capture-form';
+import { Capture } from './capture';
 
 export const metadata: Metadata = { title: 'Condition photos' };
 
+// Why Send can't run on this hire right now; the photos can still be (re)taken unless it is settled.
+function lockedReason(status: string, stage: string) {
+  if (status === 'settled') return 'This hire is settled, so its photos are final.';
+  if (stage === 'pickup' && status !== 'booked') return 'Already handed over. Retaking a photo replaces it on the record.';
+  if (stage === 'return' && status === 'booked') return 'Not handed over yet: take the pick-up photos first.';
+  if (stage === 'return' && status === 'contested') return 'The renter contested this hire: resolve it on the findings page.';
+  return null;
+}
+
+// The counter phone's pick-up and return photos. Staff only (proxy.ts, and /api/photos checks the cookie).
 export default async function CapturePage({ params }: PageProps<'/c/[hireRef]/[stage]'>) {
   const { hireRef, stage } = await params;
-  if (!STAGES.some((s) => s === stage)) notFound();
+  if (stage !== 'pickup' && stage !== 'return') notFound();
   const hire = await db.hire.findUnique({ where: { hireRef }, include: { photos: { where: { stage } } } });
   if (!hire) notFound();
-  const stored = Object.fromEntries(hire.photos.map((p) => [p.angle, { sha256: p.sha256, serverAt: p.serverAt.toISOString() }]));
 
   return (
-    <main>
-      <p>
-        <Link href={`/hire/${hireRef}`}>← Hire {hireRef}</Link>
-      </p>
-      <h1>{stage === 'pickup' ? 'Pick-up' : 'Return'} photos</h1>
-      <p>
-        Six photos, one per angle, on a hanger against a plain background in good light. Take them in any order and as
-        often as you like: the last one taken for an angle is the one kept. These photos{' '}
-        {stage === 'pickup' ? 'are your proof of how it left the shop' : 'are compared with the pick-up photos'}.
-      </p>
-      <CaptureForm hireRef={hireRef} stage={stage} angles={ANGLES} stored={stored} />
-    </main>
+    <RenterPage>
+      <Capture
+        hireRef={hireRef}
+        stage={stage}
+        itemName={itemName(hire.itemRef)}
+        stored={Object.fromEntries(hire.photos.map((p) => [p.angle, { id: p.id, at: p.serverAt.toISOString() }]))}
+        locked={lockedReason(hire.status, stage)}
+      />
+    </RenterPage>
   );
 }

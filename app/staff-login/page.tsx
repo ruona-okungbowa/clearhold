@@ -1,36 +1,44 @@
 import type { Metadata } from 'next';
+
+import { SHOPS } from '@/lib/catalogue';
+import st from '@/app/(lab)/staff.module.css';
+import w from '@/app/(lab)/wire.module.css';
 import { signIn } from './actions';
+import { Passcode } from './passcode';
 
 export const metadata: Metadata = { title: 'Staff sign-in' };
 
+// Wireframe look, real action: signIn checks STAFF_PASSCODE and sets the cookie proxy.ts looks for.
 export default async function StaffLoginPage({ searchParams }: PageProps<'/staff-login'>) {
   const { next, error } = await searchParams;
+  const bad = Boolean(error);
   return (
-    <main className="mx-auto w-full max-w-sm p-16 font-paypal text-pp-ink">
-      <h1 className="text-[28px] font-semibold text-pp-navy">Staff sign-in</h1>
-      <form action={signIn} className="mt-6 flex flex-col gap-3">
-        <input type="hidden" name="next" value={typeof next === 'string' ? next : ''} />
-        <label htmlFor="passcode" className="font-semibold">
-          Demo passcode
-        </label>
-        <input
-          id="passcode"
-          name="passcode"
-          type="password"
-          required
-          autoFocus
-          autoComplete="current-password"
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? 'passcode-error' : undefined}
-          className="rounded border border-pp-border px-3 py-2"
-        />
-        {error && (
-          <p id="passcode-error" role="alert" className="text-red-700">
-            That passcode isn&apos;t right
+    <div className={w.staff}>
+      <main className={st.signWrap}>
+        <form action={signIn} className={st.signCard}>
+          <input type="hidden" name="next" value={typeof next === 'string' ? next : ''} />
+          <p className={st.brand}>
+            Clearhold <span>Ledgerton Hire</span>
           </p>
-        )}
-        <button className="rounded bg-pp-blue px-4 py-2 font-semibold text-white">Sign in</button>
-      </form>
-    </main>
+          <h1 className={w.sH1}>Staff sign-in</h1>
+          <p className={w.sSub}>For shop staff only. Renters don’t need an account: everything comes by email.</p>
+          <Passcode bad={bad} />
+          <label className={w.sField}>
+            <span>Shop</span>
+            <select name="shop" className={w.sInput} defaultValue="Halifax">
+              {SHOPS.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
+            </select>
+          </label>
+          <button type="submit" className={w.btn}>
+            Sign in
+          </button>
+          <p className={w.sSub}>
+            Signed in for 8 hours on this device. Every approval you make is recorded with your staff code.
+          </p>
+        </form>
+      </main>
+    </div>
   );
 }
