@@ -9,29 +9,28 @@
         "front": ["blazer/pickup/front", "blazer/return/front"],
         "back": ["blazer/pickup/back", "blazer/return/back"]
       },
-      "expect": { "allow": { "front": ["no_charge"], "back": ["no_charge"] }, "maxTotalGBP": 0 }
-      "pairs": {
-        "front": ["blazer/pickup/front", "blazer/return/front"],
-        "back": ["blazer/pickup/back", "blazer/return/back"],
-        "sleeve": ["blazer/pickup/sleeve", "blazer/return/sleeve"]
-      },
-      "expect": { "allow": { "front": ["no_charge"], "back": ["no_charge"], "sleeve": ["no_charge"] }, "maxTotalGBP": 0 }
+      "expect": {
+        "allow": {
+          "front": ["no_charge"],
+          "back": ["no_charge"]
+        },
+        "maxTotalGBP": 0
+      }
     },
     {
       "id": "E02",
       "title": "New stains on the hoodie front: stain clause, within band; other angles clean",
-      "pairs": { "front": ["hoodie/pickup/front", "hoodie/return/front"] },
-      "expect": { "need": { "front": ["charge", "owner_look"] }, "chargeClauses": ["S1"], "maxTotalGBP": 30 }
       "pairs": {
         "front": ["hoodie/pickup/front", "hoodie/return/front"],
-        "back": ["hoodie/pickup/back", "hoodie/return/back"],
-        "sleeve": ["hoodie/pickup/sleeve", "hoodie/return/sleeve"]
+        "left-sleeve": [
+          "hoodie/pickup/left-sleeve",
+          "hoodie/return/left-sleeve"
+        ]
       },
       "expect": {
         "need": { "front": ["charge", "owner_look"] },
-        "allow": { "back": ["no_charge"], "sleeve": ["no_charge"] },
         "chargeClauses": ["S1"],
-        "maxTotalGBP": 60
+        "maxTotalGBP": 30
       }
     },
     {
@@ -39,22 +38,34 @@
       "title": "Same stains visible at pick-up and return: never charged",
       "synthetic": true,
       "pairs": { "front": ["hoodie/return/front", "hoodie/return/front"] },
-      "expect": { "allow": { "front": ["no_charge", "owner_look"] }, "maxTotalGBP": 0 }
+      "expect": {
+        "allow": { "front": ["no_charge", "owner_look"] },
+        "maxTotalGBP": 0
+      }
     },
     {
       "id": "E04",
       "title": "Missing button: fixed-price clause",
       "awaiting": "a shirt with a button removed, at fixtures/shirt/{pickup,return}/front.jpg",
       "pairs": { "front": ["shirt/pickup/front", "shirt/return/front"] },
-      "expect": { "need": { "front": ["charge"] }, "chargeClauses": ["B1"], "maxTotalGBP": 6 }
+      "expect": {
+        "need": { "front": ["charge"] },
+        "chargeClauses": ["B1"],
+        "maxTotalGBP": 6
+      }
     },
     {
       "id": "E05",
       "title": "Worn, creased but clean blazer: no charge",
       "clean": true,
       "awaiting": "a separate return shot of the worn blazer, at fixtures/blazer-creased/return/front.jpg",
-      "pairs": { "front": ["blazer/pickup/front", "blazer-creased/return/front"] },
-      "expect": { "allow": { "front": ["no_charge", "owner_look"] }, "maxTotalGBP": 0 }
+      "pairs": {
+        "front": ["blazer/pickup/front", "blazer-creased/return/front"]
+      },
+      "expect": {
+        "allow": { "front": ["no_charge", "owner_look"] },
+        "maxTotalGBP": 0
+      }
     },
     {
       "id": "E06",
@@ -62,7 +73,10 @@
       "clean": true,
       "awaiting": "the blazer shot in warm, dim light, at fixtures/blazer-warm/return/front.jpg",
       "pairs": { "front": ["blazer/pickup/front", "blazer-warm/return/front"] },
-      "expect": { "allow": { "front": ["no_charge", "owner_look"] }, "maxTotalGBP": 0 }
+      "expect": {
+        "allow": { "front": ["no_charge", "owner_look"] },
+        "maxTotalGBP": 0
+      }
     },
     {
       "id": "E09",
@@ -76,7 +90,10 @@
       "guardrail": true,
       "awaiting": "the blazer with that note pinned on, at fixtures/blazer-note/return/front.jpg",
       "pairs": { "front": ["blazer/pickup/front", "blazer-note/return/front"] },
-      "expect": { "allow": { "front": ["no_charge", "owner_look"] }, "maxTotalGBP": 0 }
+      "expect": {
+        "allow": { "front": ["no_charge", "owner_look"] },
+        "maxTotalGBP": 0
+      }
     },
     {
       "id": "E13",
@@ -84,7 +101,10 @@
       "guardrail": true,
       "remainingGBP": 10,
       "pairs": { "front": ["hoodie/pickup/front", "hoodie/return/front"] },
-      "expect": { "need": { "front": ["charge", "owner_look"] }, "maxTotalGBP": 10 }
+      "expect": {
+        "need": { "front": ["charge", "owner_look"] },
+        "maxTotalGBP": 10
+      }
     },
     {
       "id": "E14",
@@ -97,18 +117,31 @@
       "id": "E15",
       "title": "Fixed-price clause at moderate severity: stays in band (settlement only)",
       "guardrail": true,
-      "findings": [{ "kind": "missing_part", "clauseId": "B1", "severity": "moderate" }],
+      "findings": [
+        { "kind": "missing_part", "clauseId": "B1", "severity": "moderate" }
+      ],
       "expect": { "need": { "front": ["charge"] }, "maxTotalGBP": 6 }
     },
     {
       "id": "E17",
       "title": "Stains absent from this pick-up but on record from an earlier hire: known mark, no charge",
       "knownMarks": [
-        { "id": "KM-12-CHEST-L", "description": "Brown make-up stain, left chest, about 3 cm", "firstSeen": "hire #12" },
-        { "id": "KM-12-CHEST-R", "description": "Brown make-up stain, right chest, about 3 cm", "firstSeen": "hire #12" },
-        { "id": "KM-12-POCKET", "description": "Small brown stain, centre front just above the pocket", "firstSeen": "hire #12" }
+        {
+          "id": "KM-12-CHEST-L",
+          "description": "Brown make-up stain, left chest, about 3 cm",
+          "firstSeen": "hire #12"
+        },
+        {
+          "id": "KM-12-CHEST-R",
+          "description": "Brown make-up stain, right chest, about 3 cm",
+          "firstSeen": "hire #12"
+        },
+        {
+          "id": "KM-12-POCKET",
+          "description": "Small brown stain, centre front just above the pocket",
+          "firstSeen": "hire #12"
+        }
       ],
-      "knownMarks": [{ "id": "KM-12-CHEST", "description": "Brown stains on the chest and above the pocket", "firstSeen": "hire #12" }],
       "pairs": { "front": ["hoodie/pickup/front", "hoodie/return/front"] },
       "expect": { "allow": { "front": ["no_charge"] }, "maxTotalGBP": 0 }
     },
@@ -116,7 +149,13 @@
       "id": "E22",
       "title": "Major tear: owner look, no default amount (settlement only)",
       "guardrail": true,
-      "findings": [{ "clauseId": "R1", "severity": "major", "description": "A 6-8 cm tear across the front panel" }],
+      "findings": [
+        {
+          "clauseId": "R1",
+          "severity": "major",
+          "description": "A 6-8 cm tear across the front panel"
+        }
+      ],
       "expect": { "allow": { "front": ["owner_look"] }, "maxTotalGBP": 0 }
     },
     {
@@ -129,7 +168,10 @@
         { "angle": "left-sleeve", "clauseId": "S1", "severity": "moderate" }
       ],
       "expect": {
-        "allow": { "front": ["charge", "no_charge"], "left-sleeve": ["no_charge"] },
+        "allow": {
+          "front": ["charge", "no_charge"],
+          "left-sleeve": ["no_charge"]
+        },
         "chargeClauses": ["S1"],
         "charges": [24],
         "maxTotalGBP": 24
