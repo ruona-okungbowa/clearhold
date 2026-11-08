@@ -7,6 +7,7 @@
 
 import { readFileSync } from 'node:fs';
 import { db } from '../lib/db';
+import { demoRenter } from './demo-renter';
 import { get, type Money } from '../lib/paypal';
 
 const HOLDS_FILE = 'scripts/.aged-holds.json';
@@ -49,6 +50,7 @@ async function upsertHold(h: HoldSeed) {
     returnedAt: h.returnedAt ?? null,
     status: h.hireStatus,
     seeded: h.seeded,
+    renterName: demoRenter(h.hireRef),
   };
   const { id: hireId } = await db.hire.upsert({
     where: { hireRef: h.hireRef },

@@ -55,6 +55,7 @@ export async function confirmBooking(input: BookingInput, hireRef: string, order
       throw new Error(`Hold is ${auth.amount?.value} ${auth.amount?.currencyCode}, expected ${holdGBP} GBP`);
 
     const createdAt = new Date(auth.createTime!);
+    const payer = order.paymentSource?.paypal?.name ?? order.payer?.name;
     const hire = await db.hire.upsert({
       where: { hireRef },
       update: {},
@@ -67,6 +68,7 @@ export async function confirmBooking(input: BookingInput, hireRef: string, order
         startAt: collectAt(start),
         dueBackAt: returnBy(start),
         status: 'booked',
+        renterName: [payer?.givenName, payer?.surname].filter(Boolean).join(' ') || null,
       },
     });
     await db.authorization.upsert({
