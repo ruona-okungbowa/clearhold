@@ -1,73 +1,180 @@
 'use client';
 
-import Link from 'next/link';
+import type { AgAiHarness, AgAiHarnessSetupParams, AgReportState, AgStudioApi } from 'ag-studio';
 import { useRouter } from 'next/navigation';
-import { useState, useTransition, type FormEvent } from 'react';
-import { Chip, staffUrl, type ChipKind } from '@/app/(lab)/chrome';
-import { EvidencePair, type Box } from '@/app/(lab)/evidence';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import st from '@/app/(lab)/staff.module.css';
 import w from '@/app/(lab)/wire.module.css';
-import { askDesk } from './actions';
+import { RoomContext } from '@/components/studio/room-context';
+import { saveLayout, setLayoutRole } from './actions';
+import { ALL_SHOPS, buildLayout, ControlRoom, forSaving, stacked, studioHeight, withPositionsOf, withView, type ControlRoomRegistry, type RoomState } from './control-room';
+import { buildDeskAi } from './desk-agent';
+import type { LayoutRole } from './saved-layout';
 
-export type RoomRow = {
-  ref: string;
-  item: string;
-  branch: string;
-  chip: ChipKind;
-  status: string;
-  next: string;
-  nextHref: string;
-  needsPerson: boolean;
-  settled: boolean;
-  holdOpen: boolean;
-  held: number;
-  ageDays: number;
-  evidence: { pickupId: string | null; returnId: string | null; box: Box; what: string } | null;
-};
 export type Kpi = { label: string; value: string; note: string; risk?: boolean };
 
-export const VIEWS = ['Needs a person', 'All open hires', 'Holds', 'Item history'];
-const inView = (r: RoomRow, view: number) => [r.needsPerson, !r.settled, r.holdOpen, r.settled][view];
-const photo = (id: string) => `/api/photos/${id}`;
+type Row = Record<string, unknown>;
 
-export function Room({ rows, kpis, ages, shops, initialView }: { rows: RoomRow[]; kpis: Kpi[]; ages: number[]; shops: string[]; initialView: number }) {
+const PAGES = [
+  ['holds', 'Holds'],
+  ['risk', 'Risk'],
+] as const;
+const ROLES: [LayoutRole, string][] = [
+  ['ops', 'Ops'],
+  ['branch', 'Branch'],
+];
+
+const PHONE = '(max-width: 900px)';
+const EDIT_MIN_HEIGHT = 900;
+const subscribePhone = (notify: () => void) => {
+  const mq = window.matchMedia(PHONE);
+  mq.addEventListener('change', notify);
+  return () => mq.removeEventListener('change', notify);
+};
+
+export function Room({
+  kpis,
+  ages,
+  shops,
+  renters,
+  layouts,
+  holds,
+  hires,
+  findings,
+  marks,
+  initialView,
+  initialRole,
+  licenseKey,
+  aiModels,
+}: {
+  kpis: Kpi[];
+  ages: number[];
+  shops: string[];
+  renters: Record<string, string>;
+  layouts: Record<LayoutRole, AgReportState | null>;
+  holds: Row[];
+  hires: Row[];
+  findings: Row[];
+  marks: Row[];
+  initialView: number;
+  initialRole: LayoutRole;
+  licenseKey?: string;
+  aiModels?: string[];
+}) {
   const router = useRouter();
-  const [view, setView] = useState(initialView);
-  const [shop, setShop] = useState('All shops');
-  const shown = rows
-    .filter((r) => inView(r, view) && (shop === 'All shops' || r.branch === shop))
-    .sort((a, b) => (view === 2 ? b.ageDays - a.ageDays : 0));
-  const [selRef, setSelRef] = useState<string | null>(null);
-  const row = shown.find((r) => r.ref === selRef) ?? shown[0] ?? null;
+  const apiRef = useRef<AgStudioApi<ControlRoomRegistry> | null>(null);
+  const savedLayouts = useRef(layouts);
+  // Positions to go back to when a phone-width window widens again.
+  const desktop = useRef<RoomState | null>(null);
 
-  const [asked, setAsked] = useState<{ q: string; a: string } | null>(null);
-  const [asking, startAsk] = useTransition();
-  const ask = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = e.currentTarget;
-    const q = String(new FormData(form).get('ask') ?? '').trim();
-    if (!q) return;
-    startAsk(async () => {
-      const res = await askDesk(q).catch(() => ({ error: 'Could not reach the server' }));
-      setAsked({ q, a: 'answer' in res ? res.answer : res.error });
-      form.reset();
-    });
+  const [view, setViewState] = useState(initialView);
+  const [role, setRole] = useState(initialRole);
+  const [shop, setShop] = useState(initialRole === 'branch' ? shops[0] : ALL_SHOPS);
+  const [pageId, setPageId] = useState('holds');
+  const [editing, setEditing] = useState(false);
+  const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [firstRef, setFirstRef] = useState<string | null>(null);
+  const phone = useSyncExternalStore(subscribePhone, () => window.matchMedia(PHONE).matches, () => false);
+
+  // Read once, when Studio is created. One harness, shared by Studio's own chat panel and the desk panel.
+  const [ai] = useState(() => {
+    if (!aiModels?.length) return undefined;
+    const build = buildDeskAi(aiModels, holds, hires) as (params: AgAiHarnessSetupParams) => AgAiHarness;
+    let harness: AgAiHarness | undefined;
+    return (params: AgAiHarnessSetupParams) => (harness ??= build(params));
+  });
+  const [initialState] = useState(() => {
+    const state = withView(buildLayout(layouts[initialRole], initialRole), initialView, initialRole === 'branch' ? shops[0] : ALL_SHOPS);
+    return { ...state, selectedPageId: 'holds' } as RoomState;
+  });
+  const [height, setHeight] = useState(() => studioHeight(initialState));
+
+  const apply = (nextView: number, nextShop: string) => {
+    const api = apiRef.current;
+    if (api) api.setState(withView(api.getState(), nextView, nextShop));
   };
-  const holdTotal = ages.reduce((a, b) => a + b, 0);
-  const oldHolds = ages.slice(3).reduce((a, b) => a + b, 0);
+  const setView = (next: number) => {
+    setViewState(next);
+    apply(next, shop);
+  };
+  const changeShop = (next: string) => {
+    setShop(next);
+    apply(view, next);
+  };
+
+  const showPage = (id: string) => {
+    const api = apiRef.current;
+    if (!api) return;
+    api.setState({ ...api.getState(), selectedPageId: id });
+    setPageId(id);
+  };
+
+  const switchRole = (next: LayoutRole) => {
+    const api = apiRef.current;
+    if (!api || next === role) return;
+    savedLayouts.current[role] = forSaving(api.getState()) as unknown as AgReportState;
+    const nextShop = next === 'branch' ? (shop === ALL_SHOPS ? shops[0] : shop) : ALL_SHOPS;
+    api.setState({ ...withView(buildLayout(savedLayouts.current[next], next), view, nextShop), selectedPageId: 'holds' } as RoomState);
+    setRole(next);
+    setShop(nextShop);
+    setPageId('holds');
+    setStatus('idle');
+    setLayoutRole(next).catch((err) => console.error('[Control room] could not remember the layout', err));
+  };
+
+  const save = async () => {
+    const api = apiRef.current;
+    if (!api) return;
+    setStatus('saving');
+    try {
+      const state = forSaving(api.getState());
+      await saveLayout(role, state as unknown as AgReportState);
+      savedLayouts.current[role] = state as unknown as AgReportState;
+      setStatus('saved');
+    } catch (err) {
+      console.error('[Control room] save failed', err);
+      setStatus('error');
+    }
+  };
+
+  const fitToWindow = () => {
+    const api = apiRef.current;
+    if (!api) return;
+    if (window.matchMedia(PHONE).matches) {
+      if (desktop.current) return;
+      desktop.current = api.getState();
+      api.setState(stacked(api.getState()));
+    } else if (desktop.current) {
+      api.setState(withPositionsOf(api.getState(), desktop.current));
+      desktop.current = null;
+    }
+  };
+  const fit = useRef(fitToWindow);
+  useEffect(() => {
+    fit.current = fitToWindow;
+  });
+  useEffect(() => fit.current(), [phone]);
+
+  const holdingsLabel = shop === ALL_SHOPS ? `All ${shops.length} shops` : `Ledgerton ${shop}`;
+  const hasRisk = role === 'ops';
 
   return (
     <>
       <div className={w.sHead}>
         <div>
           <h1 className={w.sH1}>Control room</h1>
-          <p className={w.sSub}>
-            {shop === 'All shops' ? `All ${shops.length} shops` : `Ledgerton ${shop}`} · sandbox
-          </p>
+          <p className={w.sSub}>{holdingsLabel} · sandbox</p>
         </div>
         <div className={st.headRight}>
-          <select aria-label="Shop" className={w.sInput} value={shop} onChange={(e) => setShop(e.target.value)}>
-            <option>All shops</option>
+          <div className={st.tabs} role="group" aria-label="Layout">
+            {ROLES.map(([id, label]) => (
+              <button key={id} type="button" aria-pressed={role === id} onClick={() => switchRole(id)}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <select aria-label="Shop" className={w.sInput} value={shop} onChange={(e) => changeShop(e.target.value)}>
+            <option>{ALL_SHOPS}</option>
             {shops.map((s) => (
               <option key={s}>{s}</option>
             ))}
@@ -75,6 +182,24 @@ export function Room({ rows, kpis, ages, shops, initialView }: { rows: RoomRow[]
           <button type="button" className={w.btnGhost} onClick={() => router.refresh()}>
             Refresh
           </button>
+          {!phone && (
+            <button type="button" className={w.btnGhost} aria-pressed={editing} onClick={() => setEditing(!editing)}>
+              Edit layout
+            </button>
+          )}
+          {editing && !phone && (
+            <>
+              <button type="button" className={w.btnGhost} onClick={save} disabled={status === 'saving'}>
+                Save layout
+              </button>
+              <button type="button" className={w.btnGhost} onClick={() => setEditing(false)}>
+                Done
+              </button>
+            </>
+          )}
+          <span role="status" aria-live="polite" className={w.sSub}>
+            {status === 'saving' ? 'Saving…' : status === 'saved' ? 'Layout saved' : status === 'error' ? 'Save failed' : ''}
+          </span>
         </div>
       </div>
 
@@ -88,141 +213,37 @@ export function Room({ rows, kpis, ages, shops, initialView }: { rows: RoomRow[]
         ))}
       </ul>
 
-      <div className={st.crGrid}>
-        <section className={w.panel} aria-labelledby="queue-title">
-          <div className={w.panelHead}>
-            <h2 id="queue-title" className={w.sH2}>
-              Work queue
-            </h2>
-            <p className={w.sSub}>Click a row to see its evidence.</p>
-          </div>
-          <div className={st.tabs} role="group" aria-label="Views">
-            {VIEWS.map((t, i) => (
-              <button key={t} type="button" aria-pressed={view === i} onClick={() => setView(i)}>
-                {t}
-              </button>
-            ))}
-          </div>
-          {shown.length === 0 ? (
-            <p className={w.sSub}>Nothing here{shop === 'All shops' ? '' : ` for ${shop}`}.</p>
-          ) : (
-            <div className={st.gridWrap}>
-              <table className={`${st.grid} ${st.clickable}`}>
-                <thead>
-                  <tr>
-                    <th>Hire</th>
-                    <th>Look</th>
-                    <th>Shop</th>
-                    <th>Status</th>
-                    <th>Next step</th>
-                    <th className={st.right}>Held</th>
-                    <th className={st.right}>Hold age</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {shown.map((r) => (
-                    <tr key={r.ref} className={r.ref === row?.ref ? st.rowSel : undefined} aria-selected={r.ref === row?.ref} onClick={() => setSelRef(r.ref)}>
-                      <td>
-                        <Link href={staffUrl.hire(r.ref)}>{r.ref}</Link>
-                      </td>
-                      <td>{r.item}</td>
-                      <td>{r.branch}</td>
-                      <td>
-                        <Chip kind={r.chip}>{r.status}</Chip>
-                      </td>
-                      <td>{r.next}</td>
-                      <td className={st.right}>{r.holdOpen ? `£${r.held.toFixed(2)}` : '—'}</td>
-                      <td className={`${st.right} ${r.holdOpen && r.ageDays > 3 ? st.hot : ''}`}>{r.holdOpen ? `${r.ageDays}d` : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-          <h3 className={st.ageHead}>Holds by age, in days</h3>
-          <div
-            className={st.ageBar}
-            role="img"
-            aria-label={`${holdTotal} holds by age: ${holdTotal - oldHolds} are within the 3-day honour period, ${oldHolds} are older and are refreshed before any capture`}
-          >
-            {ages.map((n, i) => (
-              <span key={i} className={i >= 3 ? st.ageRe : undefined} style={{ height: `${Math.min(100, Math.max(n, 0.15) * 24)}%` }} />
-            ))}
-          </div>
-          <div className={st.axis}>
-            <span>0</span>
-            <span>3: refreshed after this</span>
-            <span>29: PayPal limit</span>
-          </div>
-        </section>
+      {hasRisk && (
+        <div className={st.tabs} role="group" aria-label="Pages">
+          {PAGES.map(([id, label]) => (
+            <button key={id} type="button" aria-pressed={pageId === id} onClick={() => showPage(id)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
-        <aside className={st.stack}>
-          {row && (
-            <section className={w.panel} aria-labelledby="ev-title">
-              <div className={w.panelHead}>
-                <h2 id="ev-title" className={w.sH2}>
-                  {row.ref}
-                </h2>
-                <Chip kind={row.chip}>{row.status}</Chip>
-              </div>
-              {row.evidence ? (
-                <EvidencePair
-                  pickupId={row.evidence.pickupId}
-                  returnId={row.evidence.returnId}
-                  box={row.evidence.box}
-                  what={row.evidence.what}
-                  photo={photo}
-                  className={st.sPair}
-                />
-              ) : (
-                <p className={w.sSub}>No findings yet for this hire.</p>
-              )}
-              <dl className={w.kv}>
-                <div>
-                  <dt>Look</dt>
-                  <dd>{row.item}</dd>
-                </div>
-                <div>
-                  <dt>Shop</dt>
-                  <dd>{row.branch}</dd>
-                </div>
-                <div>
-                  <dt>Still held</dt>
-                  <dd>{row.holdOpen ? `£${row.held.toFixed(2)}` : '—'}</dd>
-                </div>
-              </dl>
-              <Link href={row.nextHref} className={w.btn}>
-                {row.settled ? 'Open the hire' : row.next}
-              </Link>
-            </section>
-          )}
-
-          <section className={w.panel} aria-labelledby="agent-title">
-            <div className={w.panelHead}>
-              <h2 id="agent-title" className={w.sH2}>
-                Ask the desk
-              </h2>
-              <Chip kind="stAi">AI</Chip>
-            </div>
-            {asked && (
-              <div className={st.transcript} aria-live="polite">
-                <p className={st.agentYou}>{asked.q}</p>
-                <p className={st.agentAi}>{asked.a}</p>
-              </div>
-            )}
-            <form className={st.askForm} onSubmit={ask}>
-              <label htmlFor="ask" className={w.srOnly}>
-                Ask the desk
-              </label>
-              <input id="ask" name="ask" maxLength={300} className={w.sInput} placeholder="Ask about holds, hires or findings" />
-              <button type="submit" className={w.btnGhost} disabled={asking}>
-                {asking ? '…' : 'Ask'}
-              </button>
-            </form>
-            <p className={w.sSub}>The desk can explain. It can’t approve, capture or release money.</p>
-          </section>
-        </aside>
-      </div>
+      <RoomContext.Provider
+        value={{ view, setView, shop, ages, renters, firstRef, setFirstRef, harness: () => (ai && apiRef.current ? ai({ api: apiRef.current as unknown as AgStudioApi, context: undefined }) : null) }}
+      >
+        <ControlRoom
+          apiRef={apiRef}
+          initialState={initialState}
+          holds={holds}
+          hires={hires}
+          findings={findings}
+          marks={marks}
+          licenseKey={licenseKey}
+          ai={ai}
+          editing={editing}
+          height={Math.max(height, editing ? EDIT_MIN_HEIGHT : 0)}
+          onReady={() => fit.current()}
+          onStateUpdated={() => {
+            setStatus((s) => (s === 'saved' ? 'idle' : s));
+            if (apiRef.current) setHeight(studioHeight(apiRef.current.getState()));
+          }}
+        />
+      </RoomContext.Provider>
     </>
   );
 }

@@ -36,7 +36,7 @@ const TICK_STEPS_DAYS = [1, 2, 7, 14, 28, 91, 182];
 const MAX_TICKS = 6;
 const LABEL_COLUMN = '11rem';
 const GAP = 8;
-const TODAY_COLOUR = 'rgb(214 40 40)';
+const TODAY_COLOUR = 'var(--amber)';
 const formatTick = (t: number) => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
 
 // Local midnights from the first one after `min`, spaced so that at most MAX_TICKS fit before `max`.
@@ -187,9 +187,9 @@ export function HoldTimeline(params: AgWidgetParams<HoldTimelineState>) {
                       insetBlock: 0,
                       left: pct(bar.start),
                       width: width(bar.start, bar.end),
-                      borderRadius: 3,
-                      background: 'rgb(0 112 224 / 0.35)',
-                      outline: isSelected ? '2px solid rgb(0 112 224)' : undefined,
+                      borderRadius: 0,
+                      background: 'color-mix(in srgb, var(--l-blue) 35%, white)',
+                      outline: isSelected ? '2px solid var(--l-blue)' : undefined,
                     }}
                   />
                   {/* Honour period: authorisation to honourEndsAt, capped at expiry. */}
@@ -199,8 +199,8 @@ export function HoldTimeline(params: AgWidgetParams<HoldTimelineState>) {
                       insetBlock: 0,
                       left: pct(bar.start),
                       width: width(bar.start, Math.min(bar.honourEnd, bar.end)),
-                      borderRadius: 3,
-                      background: 'rgb(0 112 224 / 0.85)',
+                      borderRadius: 0,
+                      background: 'var(--l-blue)',
                     }}
                   />
                 </span>
@@ -224,7 +224,7 @@ export function HoldTimeline(params: AgWidgetParams<HoldTimelineState>) {
       {bars.length > 0 && (
         <div aria-hidden style={{ display: 'grid', gridTemplateColumns: `${LABEL_COLUMN} 1fr`, gap: GAP, fontSize: 11 }}>
           <span />
-          <span style={{ position: 'relative', height: 18, borderTop: '1px solid rgb(0 0 0 / 0.25)' }}>
+          <span style={{ position: 'relative', height: 18, borderTop: '1px solid var(--l-line)' }}>
             {axisTicks(min, max).map((t) => (
               <span
                 key={t}
@@ -248,7 +248,7 @@ export function HoldTimeline(params: AgWidgetParams<HoldTimelineState>) {
                   left: pct(now),
                   transform: 'translateX(-50%)',
                   padding: '0 3px',
-                  borderRadius: 2,
+                  borderRadius: 0,
                   background: TODAY_COLOUR,
                   color: 'white',
                   fontWeight: 600,

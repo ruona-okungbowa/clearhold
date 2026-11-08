@@ -42,16 +42,16 @@ type Mark = { id: string; itemRef: string; description: string; firstSeen: strin
 
 const COLUMN = 128;
 const MARK_ROW = 30;
-const LINE = '1px solid rgb(128 128 128 / 0.35)';
-const MARK_COLOUR = 'rgb(180 83 9)';
+const LINE = '1px solid var(--l-line)';
+const MARK_COLOUR = 'var(--amber)';
 // Text and border colour per outcome; anything else (a hire not yet inspected) is neutral.
 const CHIPS: Record<string, string> = {
-  clean: 'rgb(0 120 80)',
-  charged: 'rgb(196 18 47)',
+  clean: 'var(--green)',
+  charged: 'var(--l-ink)',
   'owner look': MARK_COLOUR,
-  contested: 'rgb(105 60 200)',
+  contested: 'var(--amber)',
 };
-const NEUTRAL = 'rgb(84 93 104)';
+const NEUTRAL = 'var(--l-muted)';
 
 const gbp = (n: number) => `£${n.toFixed(2)}`;
 const formatDate = (t: number) => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -170,14 +170,14 @@ export function ConditionHistory(params: AgWidgetParams<ConditionHistoryState>) 
       onClick={() => widgetApi.resetCrossFilter()}
       style={{ height: '100%', padding: 8, display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12 }}
     >
-      <style>{`.condition-history-column:focus-visible { outline: 2px solid rgb(0 112 224); outline-offset: 2px; }`}</style>
+      <style>{`.condition-history-column:focus-visible { outline: 2px solid var(--l-blue); outline-offset: 2px; }`}</style>
       <div onClick={(e) => e.stopPropagation()} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           Garment
           <select
             value={itemRef}
             onChange={(e) => setPicked(e.target.value)}
-            style={{ padding: '2px 4px', border: LINE, borderRadius: 4, background: 'none', color: 'inherit', font: 'inherit' }}
+            style={{ padding: '2px 4px', border: LINE, borderRadius: 0, background: 'none', color: 'inherit', font: 'inherit' }}
           >
             {items.map((item) => (
               <option key={item.ref} value={item.ref}>
@@ -230,9 +230,9 @@ export function ConditionHistory(params: AgWidgetParams<ConditionHistoryState>) 
                   gap: 4,
                   padding: 6,
                   marginBottom: 6,
-                  border: isSelected ? '2px solid rgb(0 112 224)' : LINE,
-                  borderRadius: 6,
-                  background: isSelected ? 'rgb(0 112 224 / 0.08)' : 'none',
+                  border: isSelected ? '2px solid var(--l-blue)' : LINE,
+                  borderRadius: 0,
+                  background: isSelected ? 'var(--l-selected)' : 'none',
                   color: 'inherit',
                   font: 'inherit',
                   textAlign: 'left',
@@ -250,7 +250,7 @@ export function ConditionHistory(params: AgWidgetParams<ConditionHistoryState>) 
                     src={`/api/photos/${h.photoId}`}
                     alt=""
                     loading="lazy"
-                    style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 4, background: 'rgb(128 128 128 / 0.12)' }}
+                    style={{ width: '100%', aspectRatio: '4 / 3', objectFit: 'cover', borderRadius: 0, background: 'var(--l-ground)' }}
                   />
                 ) : (
                   <span
@@ -259,8 +259,8 @@ export function ConditionHistory(params: AgWidgetParams<ConditionHistoryState>) 
                       aspectRatio: '4 / 3',
                       display: 'grid',
                       placeItems: 'center',
-                      borderRadius: 4,
-                      background: 'rgb(128 128 128 / 0.12)',
+                      borderRadius: 0,
+                      background: 'var(--l-ground)',
                       opacity: 0.7,
                     }}
                   >
@@ -271,7 +271,7 @@ export function ConditionHistory(params: AgWidgetParams<ConditionHistoryState>) 
                   style={{
                     alignSelf: 'flex-start',
                     padding: '1px 6px',
-                    borderRadius: 999,
+                    borderRadius: 0,
                     border: `1px solid ${colour}`,
                     color: colour,
                     fontWeight: 600,
