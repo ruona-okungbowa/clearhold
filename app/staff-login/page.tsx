@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 
 import { SHOPS } from '@/lib/catalogue';
+import { RenterNav } from '@/app/(lab)/chrome';
 import st from '@/app/(lab)/staff.module.css';
 import w from '@/app/(lab)/wire.module.css';
 import { signIn } from './actions';
@@ -14,7 +15,11 @@ export default async function StaffLoginPage({ searchParams }: PageProps<'/staff
   const bad = Boolean(error);
   return (
     <div className={w.staff}>
-      <main className={st.signWrap}>
+      <a href="#main" className={w.skip}>
+        Skip to content
+      </a>
+      <RenterNav className={st.signNav} />
+      <main id="main" className={st.signWrap}>
         <form action={signIn} className={st.signCard}>
           <input type="hidden" name="next" value={typeof next === 'string' ? next : ''} />
           <p className={st.brand}>
