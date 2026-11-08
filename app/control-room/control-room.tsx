@@ -75,6 +75,10 @@ const HOLD_TIMELINE = {
   dataMapping: holdTimelineWidget.defaultState!.dataMapping,
 } as const;
 
+const OLD_EVIDENCE_SPAN = 34;
+const EVIDENCE_SPAN = 44;
+const QUEUE_SPAN = EVIDENCE_SPAN + 24;
+
 // The designed screen: queue left with Evidence and the desk beside it, 17/7 of 24 tracks being the old 1fr and 400px.
 const holdsPage = (role: LayoutRole) => ({
   id: "holds",
@@ -86,12 +90,12 @@ const holdsPage = (role: LayoutRole) => ({
     5: CONDITION_HISTORY.widget,
   },
   widgetLayout: {
-    1: { xTrack: 0, yTrack: 0, xSpan: 17, ySpan: 58 },
-    2: { xTrack: 17, yTrack: 0, xSpan: 7, ySpan: 34 },
-    3: { xTrack: 17, yTrack: 34, xSpan: 7, ySpan: 24 },
+    1: { xTrack: 0, yTrack: 0, xSpan: 17, ySpan: QUEUE_SPAN },
+    2: { xTrack: 17, yTrack: 0, xSpan: 7, ySpan: EVIDENCE_SPAN },
+    3: { xTrack: 17, yTrack: EVIDENCE_SPAN, xSpan: 7, ySpan: 24 },
     // A branch cares more about its garments than its holds.
-    4: role === "ops" ? { xTrack: 0, yTrack: 58, xSpan: 12, ySpan: 20 } : { xTrack: 0, yTrack: 58, xSpan: 8, ySpan: 26 },
-    5: role === "ops" ? { xTrack: 12, yTrack: 58, xSpan: 12, ySpan: CONDITION_HISTORY.ySpan } : { xTrack: 8, yTrack: 58, xSpan: 16, ySpan: 26 },
+    4: role === "ops" ? { xTrack: 0, yTrack: QUEUE_SPAN, xSpan: 12, ySpan: 20 } : { xTrack: 0, yTrack: QUEUE_SPAN, xSpan: 8, ySpan: 26 },
+    5: role === "ops" ? { xTrack: 12, yTrack: QUEUE_SPAN, xSpan: 12, ySpan: CONDITION_HISTORY.ySpan } : { xTrack: 8, yTrack: QUEUE_SPAN, xSpan: 16, ySpan: 26 },
   },
 });
 
@@ -174,6 +178,20 @@ export function buildLayout(saved: AgReportState | null, role: LayoutRole): Room
       ? { xTrack: under.xTrack, yTrack: under.yTrack + under.ySpan, xSpan: under.xSpan, ySpan: CONDITION_HISTORY.ySpan }
       : { xTrack: 0, yTrack: bottom, xSpan: 24, ySpan: CONDITION_HISTORY.ySpan };
   }
+  // One saved when the Evidence pair was too short for its finding has it grown, pushing down what's below and
+  // stretching anything running alongside. Matches the old height exactly, so a size someone chose is left alone.
+  const evidenceId = holds && Object.keys(holds.widgets ?? {}).find((k) => holds.widgets![k].type === "evidence-pair");
+  const evidence = evidenceId ? holds.widgetLayout?.[evidenceId] : undefined;
+  if (evidence?.ySpan === OLD_EVIDENCE_SPAN) {
+    const bottom = evidence.yTrack + OLD_EVIDENCE_SPAN;
+    const grow = EVIDENCE_SPAN - OLD_EVIDENCE_SPAN;
+    for (const l of Object.values(holds!.widgetLayout!)) {
+      if (l.yTrack >= bottom) l.yTrack += grow;
+      else if (l.yTrack + l.ySpan > bottom) l.ySpan += grow;
+    }
+    evidence.ySpan = EVIDENCE_SPAN;
+  }
+
   // A layout saved before a field joined a widget lacks its mapping, which would leave the widget asking for one.
   const defaults: Record<string, object | undefined> = {
     "work-queue": workQueueWidget.defaultState!.dataMapping,

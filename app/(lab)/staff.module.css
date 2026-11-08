@@ -429,6 +429,12 @@ ul.six {
 .fCard.single {
   grid-template-columns: 1fr;
 }
+@media (min-width: 901px) {
+  /* Three photos across need more room than two. */
+  .fCard.zoomed {
+    grid-template-columns: 420px minmax(0, 1fr);
+  }
+}
 .fBody {
   display: grid;
   gap: 12px;

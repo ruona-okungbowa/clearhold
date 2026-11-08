@@ -44,13 +44,13 @@ export function AmountField({
       : n !== null && proposed !== null && n < proposed
         ? `AI proposed £${proposed.toFixed(2)}; you’re lowering it to £${n.toFixed(2)}.`
         : `AI proposed £${proposed?.toFixed(2)}.`
-    : `Below 0.75 confidence there’s no default charge. Leave it blank for no charge (£${band[0]}–£${band[1]}).`;
+    : `No default charge. Leave it blank for no charge (£${band[0]}–£${band[1]}).`;
 
   return (
     <div className={st.fBody}>
       <div className={st.amtRow}>
         <label className={`${w.sField} ${st.amtField}`} htmlFor={id}>
-          <span>{charge ? `Charge (up to £${proposed?.toFixed(2)})` : `Amount, if any (£${band[0]}–£${band[1]})`}</span>
+          <span>{charge ? 'Override: lower this amount (can’t be raised)' : `Amount, if any (£${band[0]}–£${band[1]})`}</span>
           <span className={st.amtPre}>
             <input
               id={id}

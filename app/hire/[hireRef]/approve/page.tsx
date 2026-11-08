@@ -11,6 +11,7 @@ import { verifyApproval } from '@/lib/approval';
 import { itemName } from '@/lib/catalogue';
 import { db } from '@/lib/db';
 import { amountPence, holdOf } from '@/lib/hold';
+import { CONFIDENCE_FLOOR } from '@/lib/inspector';
 import { renterLink } from '@/lib/renter-link';
 import { ANGLES, CLAUSES } from '@/lib/schedule';
 import { findingChip } from '@/lib/staff-view';
@@ -105,9 +106,9 @@ export default async function ApprovePage({ params }: PageProps<'/hire/[hireRef]
                 const priceable = (f.outcome === 'charge' || f.outcome === 'owner_look') && clause?.chargeable;
                 const cls = f.outcome === 'charge' ? st.fCharge : f.outcome === 'owner_look' ? st.fLook : '';
                 return (
-                  <li key={f.id} className={`${st.fCard} ${cls} ${pair ? '' : st.single}`}>
+                  <li key={f.id} className={`${st.fCard} ${cls} ${pair ? '' : st.single} ${f.returnPhotoId && f.box ? st.zoomed : ''}`}>
                     {pair && (
-                      <EvidencePair pickupId={f.pickupPhotoId} returnId={f.returnPhotoId} box={f.box as Box} what={angleName(f.angle)} photo={photo} className={st.sPair} />
+                      <EvidencePair pickupId={f.pickupPhotoId} returnId={f.returnPhotoId} box={f.box as Box} what={angleName(f.angle)} photo={photo} className={st.sPair} zoom />
                     )}
                     <div className={st.fBody}>
                       <div className={st.fTop}>
@@ -138,6 +139,13 @@ export default async function ApprovePage({ params }: PageProps<'/hire/[hireRef]
                           </span>
                         </span>
                       </p>
+                      {f.outcome === 'owner_look' && f.confidence < CONFIDENCE_FLOOR && <p className={w.sSub}>Below {CONFIDENCE_FLOOR}: a person decides, the AI proposes no amount</p>}
+                      {f.setGBP !== null && (
+                        <p className={w.sSub}>
+                          AI proposed {f.proposedGBP === null ? 'no amount' : gbp(Number(f.proposedGBP))} → set to {gbp(Number(f.setGBP))} by {f.setBy ?? 'Staff'}
+                          {hire.staffCode && ` (${hire.staffCode})`}
+                        </p>
+                      )}
                       {priceable ? (
                         <AmountField
                           hireRef={hireRef}
