@@ -1,36 +1,34 @@
 'use client';
 
-// Evidence pair: a custom AG Studio widget showing one finding at a time, with its pick-up and return photos
-// side by side and the finding's box drawn on the return photo. A list steps through the findings in the current
-// filter; clicking the clause cross-filters on it. Lower, Approve and Settle go through the hire's server actions.
+// Evidence pair: a custom AG Studio widget showing one hire's evidence: its pick-up and return crops with the ring box,
+// the hire's status, and the next step. The hire is the one selected in the work queue (a cross filter), or the queue's
+// top row until someone selects one.
 
-import { useRouter } from 'next/navigation';
-import { useEffect, useRef, useState, useTransition, type FormEvent } from 'react';
+import Link from 'next/link';
+import { useEffect, useRef, useState } from 'react';
 import type { AgFieldRole, AgWidgetData, AgWidgetDataFormat, AgWidgetFieldReference, AgWidgetParams } from 'ag-studio';
 import type { AgWidgetDefinition } from 'ag-studio-react';
-import { approveHire, lowerFinding, settleApproved } from '@/app/control-room/actions';
-import { CLAUSES } from '@/lib/schedule';
+import { Chip, gbp, type ChipKind } from '@/app/(lab)/chrome';
+import { EvidencePair as Crops, type Box } from '@/app/(lab)/evidence';
+import st from '@/app/(lab)/staff.module.css';
+import w from '@/app/(lab)/wire.module.css';
+import { useRoom } from './room-context';
 
 const FIELDS = {
-  finding: { id: 'findings.id', label: 'Finding', role: 'category' },
   hireRef: { id: 'hires.hireRef', label: 'Hire', role: 'category' },
-  hireStatus: { id: 'hires.status', label: 'Hire status', role: 'category' },
-  openApproval: { id: 'hires.openApproval', label: 'Open final approval', role: 'category' },
-  contestNote: { id: 'hires.contestNote', label: 'Open contest note', role: 'category' },
-  contestPhotoId: { id: 'hires.contestPhotoId', label: 'Open contest photo', role: 'category' },
-  angle: { id: 'findings.angle', label: 'Angle', role: 'category' },
-  description: { id: 'findings.description', label: 'Description', role: 'category' },
-  clauseId: { id: 'findings.clauseId', label: 'Clause', role: 'category' },
-  severity: { id: 'findings.severity', label: 'Severity', role: 'category' },
-  box: { id: 'findings.box', label: 'Box', role: 'category' },
-  pickupPhotoId: { id: 'findings.pickupPhotoId', label: 'Pick-up photo', role: 'category' },
-  returnPhotoId: { id: 'findings.returnPhotoId', label: 'Return photo', role: 'category' },
-  confidence: { id: 'findings.confidence', label: 'Confidence', role: 'numeric' },
-  outcome: { id: 'findings.outcome', label: 'Outcome', role: 'category' },
-  reason: { id: 'findings.reason', label: 'Reason', role: 'category' },
-  proposedGBP: { id: 'findings.proposedGBP', label: 'AI proposed', role: 'numeric' },
-  setGBP: { id: 'findings.setGBP', label: 'Set by a person', role: 'numeric' },
-  setBy: { id: 'findings.setBy', label: 'Set by', role: 'category' },
+  chip: { id: 'hires.chip', label: 'Chip', role: 'category' },
+  status: { id: 'hires.stepStatus', label: 'Status', role: 'category' },
+  look: { id: 'hires.look', label: 'Look', role: 'category' },
+  branch: { id: 'hires.branch', label: 'Shop', role: 'category' },
+  holdOpen: { id: 'hires.holdOpen', label: 'Hold open', role: 'category' },
+  held: { id: 'hires.heldGBP', label: 'Still held', role: 'numeric' },
+  settled: { id: 'hires.isSettled', label: 'Settled', role: 'category' },
+  next: { id: 'hires.nextStep', label: 'Next step', role: 'category' },
+  nextHref: { id: 'hires.nextHref', label: 'Next step link', role: 'category' },
+  pickupId: { id: 'hires.evidencePickupId', label: 'Pick-up photo', role: 'category' },
+  returnId: { id: 'hires.evidenceReturnId', label: 'Return photo', role: 'category' },
+  box: { id: 'hires.evidenceBox', label: 'Box', role: 'category' },
+  what: { id: 'hires.evidenceWhat', label: 'Angle', role: 'category' },
 } satisfies Record<string, { id: string; label: string; role: AgFieldRole }>;
 
 type Key = keyof typeof FIELDS;
@@ -42,74 +40,14 @@ export interface EvidencePairState extends AgWidgetData<EvidencePairDataMapping,
   type: 'evidence-pair';
 }
 
-type Row = {
-  finding: string;
-  hireRef: string;
-  hireStatus: string;
-  openApproval: boolean;
-  contestNote: string;
-  contestPhotoId: string;
-  angle: string;
-  description: string;
-  clauseId: string | null;
-  severity: string | null;
-  box: string | null;
-  pickupPhotoId: string | null;
-  returnPhotoId: string | null;
-  confidence: number;
-  outcome: string;
-  reason: string;
-  proposedGBP: number | null;
-  setGBP: number | null;
-  setBy: string | null;
-};
-type Box = { x: number; y: number; w: number; h: number };
+type Row = { hireRef: string; chip: ChipKind; status: string; look: string; branch: string; holdOpen: boolean; held: number; settled: boolean; next: string; nextHref: string; pickupId: string; returnId: string; box: string; what: string };
 
-const gbp = (n: number) => `£${n.toFixed(2)}`;
-const toPence = (n: number) => Math.round(n * 100);
-const OUTCOMES: Record<string, string> = { charge: 'Charge', owner_look: 'Owner look', no_charge: 'No charge' };
-const LINE = '1px solid rgb(128 128 128 / 0.35)';
-const button = { padding: '2px 8px', border: LINE, borderRadius: 4, background: 'none', color: 'inherit', font: 'inherit', cursor: 'pointer' };
-
-// Also the dispute page's photo pairs.
-export function Photo({ id, label, box }: { id: string | null; label: string; box?: Box | null }) {
-  return (
-    <figure style={{ margin: 0, minWidth: 0 }}>
-      <figcaption style={{ fontSize: 11, opacity: 0.7, marginBottom: 2 }}>{label}</figcaption>
-      {id ? (
-        // The wrapper is exactly the image's size, so the box's fractions of the image land in the right place.
-        <div style={{ position: 'relative', overflow: 'hidden' }}>
-          {/* eslint-disable-next-line @next/next/no-img-element -- a private photo of unknown size, not for the image optimiser */}
-          <img src={`/api/photos/${id}`} alt={`${label} photo`} style={{ display: 'block', width: '100%', height: 'auto' }} />
-          {box && (
-            <div
-              aria-hidden
-              style={{
-                position: 'absolute',
-                left: `${box.x * 100}%`,
-                top: `${box.y * 100}%`,
-                width: `${box.w * 100}%`,
-                height: `${box.h * 100}%`,
-                outline: '2px solid rgb(214 40 40)',
-              }}
-            />
-          )}
-        </div>
-      ) : (
-        <p style={{ margin: 0, padding: 16, border: LINE, textAlign: 'center' }}>No photo</p>
-      )}
-    </figure>
-  );
-}
+const photo = (id: string) => `/api/photos/${id}`;
 
 export function EvidencePair(params: AgWidgetParams<EvidencePairState>) {
-  const { dataMapping, widgetApi } = params;
-  const router = useRouter();
+  const { firstRef } = useRoom();
   const hasLoaded = useRef(false);
   const [rows, setRows] = useState<Row[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startAction] = useTransition();
 
   // Keyed on params, not dataMapping: Studio passes new params when page or cross filters change,
   // while dataMapping and widgetApi stay the same objects.
@@ -124,15 +62,12 @@ export function EvidencePair(params: AgWidgetParams<EvidencePairState>) {
       }
       const field = (k: Key) => dataMapping[k]!.at(0)!;
 
-      // A solid overlay on first load; after that a quiet refresh indicator over the previous finding.
+      // A solid overlay on first load; after that a quiet refresh indicator over the previous hire.
       widgetApi.setDisplayState('loading', { prominent: !hasLoaded.current });
-      const response = await widgetApi.getData({
-        fields: KEYS.map(field),
-        sort: (['hireRef', 'angle', 'finding'] as const).map((k) => ({ field: field(k), direction: 'asc' as const })),
-      });
+      const response = await widgetApi.getData({ fields: KEYS.map(field) });
       if (!active) return;
 
-      const next =response.results.rows.map((row) => Object.fromEntries(KEYS.map((k) => [k, row[field(k).key] ?? null])) as Row);
+      const next = response.results.rows.map((row) => Object.fromEntries(KEYS.map((k) => [k, row[field(k).key] ?? ''])) as Row);
       hasLoaded.current = next.length > 0;
       setRows(next);
       widgetApi.setDisplayState(next.length > 0 ? 'displayed' : 'noData');
@@ -146,173 +81,49 @@ export function EvidencePair(params: AgWidgetParams<EvidencePairState>) {
     };
   }, [params]);
 
-  const row = rows.find((r) => r.finding === selectedId) ?? rows[0];
+  // One row when a hire is selected in the queue.
+  const row = rows.length === 1 ? rows[0] : (rows.find((r) => r.hireRef === firstRef) ?? rows[0]);
   // A root element even with no rows: Studio attaches the widget by the DOM of its first render.
   if (!row) return <div style={{ height: '100%' }} />;
 
-  const clause = CLAUSES.find((c) => c.id === row.clauseId);
-  const band = !clause
-    ? null
-    : !clause.chargeable
-      ? 'never charged'
-      : clause.lowGBP === clause.highGBP
-        ? `${gbp(clause.lowGBP)} fixed`
-        : `${gbp(clause.lowGBP)}–${gbp(clause.highGBP)}`;
-  const amount = row.setGBP ?? row.proposedGBP;
-  const settled = row.hireStatus === 'settled';
-  const locked = pending || settled;
-  const clauseFilter = dataMapping.clauseId?.at(0);
-  const clauseSelected = (widgetApi.getCrossFilterSelections() ?? []).some((s) => s.type === 'value' && s.values.includes(row.clauseId));
-
-  const run = (action: () => Promise<string | null>) => {
-    setError(null);
-    startAction(async () => {
-      const message = await action().catch(() => 'Could not reach the server; check the hire before trying again');
-      setError(message);
-      router.refresh();
-    });
-  };
-
-  const lower = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const form = new FormData(e.currentTarget);
-    // personPence doesn't throw on a raise, it restores the AI's amount, so a mistyped figure must stop here.
-    const entered = toPence(Number(form.get('amountGBP')));
-    if (row.outcome === 'charge' && entered >= toPence(row.proposedGBP ?? 0)) {
-      setError(`Refused: a charge can only go down, so it must be under the AI's ${gbp(row.proposedGBP ?? 0)}`);
-      return;
-    }
-    run(() => lowerFinding(row.hireRef, row.finding, form));
-  };
-
   return (
-    <div style={{ height: '100%', display: 'grid', gridTemplateColumns: '9rem 1fr', fontSize: 13 }}>
-      <nav aria-label="Findings" style={{ overflowY: 'auto', borderRight: LINE }}>
-        {rows.map((r) => (
-          <button
-            key={r.finding}
-            type="button"
-            aria-current={r === row}
-            onClick={() => {
-              setSelectedId(r.finding);
-              setError(null);
-            }}
-            style={{
-              display: 'block',
-              width: '100%',
-              padding: '4px 8px',
-              border: 0,
-              borderBottom: LINE,
-              background: r === row ? 'rgb(0 112 224 / 0.15)' : 'none',
-              color: 'inherit',
-              font: 'inherit',
-              fontSize: 12,
-              textAlign: 'left',
-              cursor: 'pointer',
-            }}
-          >
-            {r.hireRef}
-            <br />
-            {r.angle}: {OUTCOMES[r.outcome] ?? r.outcome}
-          </button>
-        ))}
-      </nav>
-
-      <div style={{ minWidth: 0, overflowY: 'auto', padding: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, alignItems: 'start' }}>
-          <Photo id={row.pickupPhotoId} label={`Pick-up, ${row.angle}`} />
-          <Photo id={row.returnPhotoId} label={`Return, ${row.angle}`} box={row.box ? (JSON.parse(row.box) as Box) : null} />
-        </div>
-
-        {row.contestNote && (
-          // Empty strings, not nulls, when there is no contest: Studio drops a column with no values.
-          <div role="note" style={{ padding: 8, border: '1px solid rgb(214 40 40)', borderRadius: 4 }}>
-            <strong>The renter contests {row.hireRef}:</strong> {row.contestNote}
-            {row.contestPhotoId && (
-              <div style={{ maxWidth: '50%', marginTop: 4 }}>
-                <Photo id={row.contestPhotoId} label="Renter's photo" />
-              </div>
-            )}
-            <div style={{ fontSize: 11, opacity: 0.7 }}>Lower or remove, then approve: that resolves it. The total cannot go up.</div>
-          </div>
-        )}
-        <p style={{ margin: 0 }}>{row.description}</p>
-        <div>
-          Clause:{' '}
-          {row.clauseId ? (
-            <button
-              type="button"
-              aria-pressed={clauseSelected}
-              title="Filter the report on this clause"
-              onClick={(e) => {
-                if (!clauseFilter) return;
-                widgetApi.toggleCrossFilter({ type: 'value', value: row.clauseId, field: clauseFilter, group: 0, reset: !(e.metaKey || e.ctrlKey) });
-              }}
-              style={{ ...button, background: clauseSelected ? 'rgb(0 112 224 / 0.15)' : 'none', textAlign: 'left' }}
-            >
-              {row.clauseId}: {clause?.name ?? 'not in the schedule'}
-            </button>
-          ) : (
-            'none'
-          )}
-          {band && ` (${band})`}
-        </div>
-        <div>
-          Severity: {row.severity ?? 'none'} · Confidence: {Math.round(row.confidence * 100)}%
-        </div>
-        <div>
-          {OUTCOMES[row.outcome] ?? row.outcome}: {row.reason}
-        </div>
-        <div>
-          Amount:{' '}
-          {amount === null ? (
-            'none'
-          ) : (
-            <>
-              <strong>{gbp(amount)}</strong> {row.setGBP !== null ? `Set by ${row.setBy}` : 'AI proposed'}
-            </>
-          )}
-        </div>
-
-        <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-          {row.outcome !== 'no_charge' && clause?.chargeable && (
-            // Keyed so the box empties once the new amount is in.
-            <form key={`${row.finding}-${row.setGBP}`} onSubmit={lower} style={{ display: 'flex', gap: 4 }}>
-              <input
-                name="amountGBP"
-                type="number"
-                min="0"
-                step="0.01"
-                required
-                disabled={locked}
-                aria-label="Amount in pounds"
-                style={{ width: '6rem', padding: '2px 4px', border: LINE, borderRadius: 4, background: 'none', color: 'inherit', font: 'inherit' }}
-              />
-              <button disabled={locked} style={button}>
-                {row.outcome === 'charge' ? 'Lower' : 'Set amount'}
-              </button>
-            </form>
-          )}
-          {/* A second approval would stay open after the capture, so one at a time, as on the approve page. */}
-          {!row.openApproval && (
-            <button type="button" disabled={locked} onClick={() => run(() => approveHire(row.hireRef))} style={button}>
-              {row.contestNote ? 'Resolve the contest and approve' : 'Approve all charges on'} {row.hireRef}
-            </button>
-          )}
-          {row.openApproval && !settled && (
-            <button type="button" disabled={pending} onClick={() => run(() => settleApproved(row.hireRef))} style={button}>
-              Settle {row.hireRef}
-            </button>
-          )}
-          {pending && <span role="status">Working…</span>}
-        </div>
-        {error && (
-          <p role="alert" style={{ margin: 0, color: 'rgb(214 40 40)' }}>
-            {error}
-          </p>
-        )}
+    <section className={st.widget} aria-labelledby="ev-title">
+      <div className={w.panelHead}>
+        <h2 id="ev-title" className={w.sH2}>
+          {row.hireRef}
+        </h2>
+        <Chip kind={row.chip}>{row.status}</Chip>
       </div>
-    </div>
+      {row.pickupId || row.returnId ? (
+        <Crops
+          pickupId={row.pickupId || null}
+          returnId={row.returnId || null}
+          box={row.box ? (JSON.parse(row.box) as Box) : null}
+          what={row.what}
+          photo={photo}
+          className={st.sPair}
+        />
+      ) : (
+        <p className={w.sSub}>No findings yet for this hire.</p>
+      )}
+      <dl className={w.kv}>
+        <div>
+          <dt>Look</dt>
+          <dd>{row.look}</dd>
+        </div>
+        <div>
+          <dt>Shop</dt>
+          <dd>{row.branch}</dd>
+        </div>
+        <div>
+          <dt>Still held</dt>
+          <dd>{row.holdOpen ? gbp(row.held) : '—'}</dd>
+        </div>
+      </dl>
+      <Link href={row.nextHref} className={w.btn}>
+        {row.settled ? 'Open the hire' : row.next}
+      </Link>
+    </section>
   );
 }
 
@@ -324,14 +135,14 @@ export const evidencePairWidget: AgWidgetDefinition<'evidence-pair', EvidencePai
   id: 'evidence-pair',
   label: 'Evidence pair',
   icon: ICON,
-  // Everything but the finding itself is one value per finding.
+  // Everything but the hire itself is one value per hire.
   dataMapping: Object.fromEntries(
     KEYS.map((k) => [
       k,
       {
         type: 'field',
         supportedRoles: [FIELDS[k].role],
-        requires: k === 'finding' ? { cardinality: 'many' } : { per: 'dataMapping.finding', cardinality: 'one' },
+        requires: k === 'hireRef' ? { cardinality: 'many' } : { per: 'dataMapping.hireRef', cardinality: 'one' },
         required: true,
       },
     ]),
@@ -341,7 +152,7 @@ export const evidencePairWidget: AgWidgetDefinition<'evidence-pair', EvidencePai
     dataMapping: Object.fromEntries(KEYS.map((k) => [k, [{ id: FIELDS[k].id }]])) as EvidencePairDataMapping,
   },
   comp: EvidencePair,
-  defaultSize: { width: 640, height: 560 },
-  minSize: { width: 420, height: 320 },
-  ai: { description: 'One damage finding at a time: pick-up and return photos side by side, its clause and amount, with Lower, Approve and Settle.' },
+  defaultSize: { width: 400, height: 460 },
+  minSize: { width: 300, height: 320 },
+  ai: { description: "The selected hire's pick-up and return photos side by side, its status and its next step." },
 };

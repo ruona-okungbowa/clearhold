@@ -4,6 +4,7 @@ import type { AgReportState } from 'ag-studio';
 import { approveCharges, setAmount, settleHire } from '@/app/hire/[hireRef]/actions';
 import { anthropic } from '@ai-sdk/anthropic';
 import { generateText } from 'ai';
+import { cookies } from 'next/headers';
 import { z } from 'zod';
 import { audit } from '@/lib/audit';
 import { db } from '@/lib/db';
@@ -11,7 +12,7 @@ import { MODEL } from '@/lib/inspector';
 import { loadHires } from '@/lib/staff-view';
 import { refusal } from '@/lib/refusal';
 import { requireStaff } from '@/lib/staff';
-import { CONTROL_ROOM_LAYOUT } from './saved-layout';
+import { LAYOUT_ROLE_COOKIE, layoutName, type LayoutRole } from './saved-layout';
 
 const MAX_STATE_BYTES = 512_000;
 
@@ -79,9 +80,18 @@ export async function settleApproved(hireRef: string) {
   return refusal(requireStaff().then(() => settleHire(hireRef)));
 }
 
-// Stores api.getState() as the control room's layout.
-export async function saveLayout(state: AgReportState): Promise<void> {
+const Role = z.enum(['ops', 'branch']);
+
+// Remembers which layout this browser shows.
+export async function setLayoutRole(role: LayoutRole): Promise<void> {
   await requireStaff();
+  (await cookies()).set(LAYOUT_ROLE_COOKIE, Role.parse(role), { httpOnly: true, sameSite: 'lax', path: '/control-room', maxAge: 31_536_000 });
+}
+
+// Stores api.getState() as the given role's layout.
+export async function saveLayout(role: LayoutRole, state: AgReportState): Promise<void> {
+  await requireStaff();
+  const name = layoutName(Role.parse(role));
   // Reachable by direct POST, so check the shape before storing it.
   if (typeof state !== 'object' || state === null || !Array.isArray((state as { pages?: unknown }).pages)) {
     throw new Error('Layout is not a Studio state object');
@@ -91,8 +101,8 @@ export async function saveLayout(state: AgReportState): Promise<void> {
 
   const data = JSON.parse(json);
   await db.studioLayout.upsert({
-    where: { name: CONTROL_ROOM_LAYOUT },
-    create: { name: CONTROL_ROOM_LAYOUT, state: data },
+    where: { name },
+    create: { name, state: data },
     update: { state: data },
   });
 }
