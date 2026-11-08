@@ -45,27 +45,31 @@ type Row = { ref: string; look: string; renter: string; shop: string; chip: Chip
 const MODULES = [AllCommunityModule];
 const SELECTION = { mode: 'singleRow', checkboxes: false, enableClickSelection: 'enableSelection' } as const;
 
+// A column's own cellClass replaces the one its rightAligned type sets, so that class is repeated here.
+const RIGHT_CELL = ['ag-right-aligned-cell', st.tabular];
+
 const COLUMNS: ColDef<Row>[] = [
-  { field: 'ref', headerName: 'Hire', minWidth: 125, cellRenderer: ({ value }: { value: string }) => <Link href={staffUrl.hire(value)}>{value}</Link> },
-  { field: 'look', headerName: 'Look', minWidth: 140, flex: 1 },
-  { field: 'renter', headerName: 'Renter', minWidth: 130, flex: 1 },
-  { field: 'shop', headerName: 'Shop', minWidth: 90 },
-  { field: 'status', headerName: 'Status', minWidth: 160, cellRenderer: ({ value, data }: { value: string; data?: Row }) => <Chip kind={data?.chip ?? 'stPlain'}>{value}</Chip> },
-  { field: 'next', headerName: 'Next step', minWidth: 160, flex: 1, cellRenderer: ({ value, data }: { value: string; data?: Row }) => <Link href={data?.nextHref ?? '#'}>{value}</Link> },
+  // Fixed columns need a width: without one AG Grid gives each 200px and the eight no longer fit the panel.
+  { field: 'ref', headerName: 'Hire', width: 115, cellRenderer: ({ value }: { value: string }) => <Link href={staffUrl.hire(value)}>{value}</Link> },
+  { field: 'look', headerName: 'Look', minWidth: 120, flex: 1 },
+  { field: 'renter', headerName: 'Renter', minWidth: 110, flex: 1 },
+  { field: 'shop', headerName: 'Shop', width: 105 },
+  { field: 'status', headerName: 'Status', width: 140, cellRenderer: ({ value, data }: { value: string; data?: Row }) => <Chip kind={data?.chip ?? 'stPlain'}>{value}</Chip> },
+  { field: 'next', headerName: 'Next step', minWidth: 150, flex: 1, cellRenderer: ({ value, data }: { value: string; data?: Row }) => <Link href={data?.nextHref ?? '#'}>{value}</Link> },
   {
     field: 'held',
     headerName: 'Held',
     type: 'rightAligned',
-    minWidth: 90,
-    cellClass: st.tabular,
+    width: 80,
+    cellClass: RIGHT_CELL,
     valueFormatter: ({ value, data }) => (data?.holdOpen ? `£${value.toFixed(2)}` : '—'),
   },
   {
     field: 'age',
     headerName: 'Hold age',
     type: 'rightAligned',
-    minWidth: 95,
-    cellClass: st.tabular,
+    width: 80,
+    cellClass: RIGHT_CELL,
     cellClassRules: { [st.hot]: ({ value, data }) => Boolean(data?.holdOpen && value > 3) },
     valueFormatter: ({ value, data }) => (data?.holdOpen ? `${value}d` : '—'),
   },
@@ -124,7 +128,8 @@ export function WorkQueue(params: AgWidgetParams<WorkQueueState>) {
   };
 
   const onSelectionChanged = (e: SelectionChangedEvent<Row>) => {
-    if (e.source === 'api') return;
+    // Only a person's selection moves Evidence: new rows dropping the selected one also land here.
+    if (e.source === 'api' || e.source === 'rowDataChanged') return;
     const ref = e.api.getSelectedRows()[0]?.ref;
     const field = dataMapping.ref?.at(0);
     if (ref && field && ref !== selected()) widgetApi.toggleCrossFilter({ type: 'value', value: ref, field, group: 0, reset: true });

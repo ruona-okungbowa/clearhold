@@ -47,15 +47,18 @@ export const agStudioLedgerTheme = studioTheme.withParams({
   studioCanvasShadow: false,
   studioCanvasBackgroundColor: 'var(--l-ground)',
   studioCanvasPadding: 0,
+  // The default of 720 would scroll a phone sideways.
+  studioCanvasMinWidth: 280,
   studioCanvasRowHeight: 16,
   studioCanvasFontFamily: FONT,
 
   // Widgets are the ledger's panels. Studio's border param is all four sides, so the 3px top rule is .studio in
-  // app/(lab)/staff.module.css.
+  // app/(lab)/staff.module.css, along with the panel's inner padding.
   studioWidgetBackgroundColor: WHITE,
   studioWidgetBorder: false,
   studioWidgetBorderRadius: 0,
-  studioWidgetPadding: 20,
+  // Studio puts this outside the white panel, so 8 each side is the page's 16px gap between panels.
+  studioWidgetPadding: 8,
   studioWidgetTitleFontFamily: FONT,
   studioWidgetTitleFontSize: 18,
   studioWidgetTitleFontWeight: 600,

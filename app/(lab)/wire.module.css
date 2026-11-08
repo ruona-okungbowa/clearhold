@@ -35,6 +35,7 @@
 }
 .staff {
   --ink: var(--l-ink);
+  min-height: 100dvh;
   background: var(--l-ground);
   color: var(--l-ink);
   font: 15px/1.5 var(--ledger);

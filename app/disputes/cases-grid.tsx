@@ -21,6 +21,8 @@ export type CaseRow = {
 
 const MODULES = [AllCommunityModule];
 const AUTO_HEIGHT_ROWS = 15;
+// A column's own cellClass replaces the one its rightAligned type sets, so that class is repeated here.
+const RIGHT_CELL = ['ag-right-aligned-cell', st.tabular];
 
 const COLUMNS: ColDef<CaseRow>[] = [
   {
@@ -30,13 +32,13 @@ const COLUMNS: ColDef<CaseRow>[] = [
     cellRenderer: ({ value }: { value: string | null }) => (value ? <Link href={staffUrl.dispute(value)}>{value}</Link> : 'Not ours'),
   },
   { field: 'type', headerName: 'Type', minWidth: 140 },
-  { field: 'reason', headerName: 'Reason', flex: 2, minWidth: 220 },
+  { field: 'reason', headerName: 'Reason', flex: 2, minWidth: 220, wrapText: true, autoHeight: true },
   {
     field: 'charged',
     headerName: 'Charged',
     type: 'rightAligned',
     minWidth: 110,
-    cellClass: st.tabular,
+    cellClass: RIGHT_CELL,
     valueFormatter: ({ value }) => (value === null ? '—' : `£${value.toFixed(2)}`),
   },
   {
@@ -44,7 +46,7 @@ const COLUMNS: ColDef<CaseRow>[] = [
     headerName: 'Days to respond',
     type: 'rightAligned',
     minWidth: 150,
-    cellClass: st.tabular,
+    cellClass: RIGHT_CELL,
     cellClassRules: { [st.hot]: ({ value }) => value !== null && value <= 3 },
     valueFormatter: ({ value }) => value ?? '—',
   },
