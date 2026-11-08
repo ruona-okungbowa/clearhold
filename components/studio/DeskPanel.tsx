@@ -35,7 +35,8 @@ function askSession(session: AgAiChatSession, question: string) {
       const last = session.messages.at(-1);
       if (session.status !== 'idle' || session.messages.length <= before + 1 || last?.role !== 'assistant') return;
       stop();
-      const answer = last.parts.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n').trim();
+      // This panel prints text as written; an @field[hires.ageDays] an agent passes on becomes ageDays.
+      const answer = last.parts.flatMap((p) => (p.type === 'text' ? [p.text] : [])).join('\n').replace(/@\w+\[(?:[^\]]*\.)?([^\]]+)\]/g, '$1').trim();
       if (answer) resolve(answer);
       else reject(new Error('The desk gave no answer'));
     }

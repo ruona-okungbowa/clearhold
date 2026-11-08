@@ -86,12 +86,12 @@ const holdsPage = (role: LayoutRole) => ({
     5: CONDITION_HISTORY.widget,
   },
   widgetLayout: {
-    1: { xTrack: 0, yTrack: 0, xSpan: 17, ySpan: 50 },
-    2: { xTrack: 17, yTrack: 0, xSpan: 7, ySpan: 32 },
-    3: { xTrack: 17, yTrack: 32, xSpan: 7, ySpan: 18 },
+    1: { xTrack: 0, yTrack: 0, xSpan: 17, ySpan: 58 },
+    2: { xTrack: 17, yTrack: 0, xSpan: 7, ySpan: 34 },
+    3: { xTrack: 17, yTrack: 34, xSpan: 7, ySpan: 24 },
     // A branch cares more about its garments than its holds.
-    4: role === "ops" ? { xTrack: 0, yTrack: 50, xSpan: 12, ySpan: 20 } : { xTrack: 0, yTrack: 50, xSpan: 8, ySpan: 26 },
-    5: role === "ops" ? { xTrack: 12, yTrack: 50, xSpan: 12, ySpan: CONDITION_HISTORY.ySpan } : { xTrack: 8, yTrack: 50, xSpan: 16, ySpan: 26 },
+    4: role === "ops" ? { xTrack: 0, yTrack: 58, xSpan: 12, ySpan: 20 } : { xTrack: 0, yTrack: 58, xSpan: 8, ySpan: 26 },
+    5: role === "ops" ? { xTrack: 12, yTrack: 58, xSpan: 12, ySpan: CONDITION_HISTORY.ySpan } : { xTrack: 8, yTrack: 58, xSpan: 16, ySpan: 26 },
   },
 });
 
@@ -255,11 +255,13 @@ export function withPositionsOf(state: RoomState, positions: RoomState): RoomSta
 }
 
 const TRACK_PX = 16;
+// Studio's canvas measures 2px taller than its tracks, which would otherwise put a scrollbar on it.
+const CANVAS_EXTRA_PX = 2;
 /** How tall the canvas must be to show the current page without scrolling inside it. */
 export function studioHeight(state: RoomState) {
   const s = loose(state);
   const page = s.pages.find((p) => p.id === s.selectedPageId) ?? s.pages[0];
-  return Math.max(0, ...Object.values(page?.widgetLayout ?? {}).map((l) => l.yTrack + l.ySpan)) * TRACK_PX;
+  return Math.max(0, ...Object.values(page?.widgetLayout ?? {}).map((l) => l.yTrack + l.ySpan)) * TRACK_PX + CANVAS_EXTRA_PX;
 }
 
 const widgets = (config: AgWidgetsConfig<AgDefaultRegistry>) =>
@@ -317,7 +319,7 @@ export function ControlRoom({
   );
 
   return (
-    <div className={st.studio} style={{ height, width: "100%" }}>
+    <div className={st.studio} style={{ height }}>
       <AgStudioProvider licenseKey={licenseKey} modules={ai ? AI_MODULES : undefined}>
         <AgStudio<ControlRoomRegistry>
           style={{ height: "100%", width: "100%" }}
