@@ -10,6 +10,7 @@
 import assert from 'node:assert/strict';
 import { db } from '../lib/db';
 import { NEW_MARK, PROMPT_VERSION } from '../lib/inspector';
+import { demoRenter } from './demo-renter';
 
 const DAY = 86_400_000;
 const HOUR = 3_600_000;
@@ -238,6 +239,7 @@ function build(now: number) {
           status,
           seeded: true,
           staffCode: out ? null : staffCode,
+          renterName: demoRenter(hireRef),
           createdAt: d(startAt),
         };
         hires.push(hire);

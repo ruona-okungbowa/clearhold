@@ -22,6 +22,7 @@ model Hire {
   status         String // booked, out, returned, contested, settled
   seeded         Boolean         @default(false) // seeded history vs live sandbox hire
   staffCode      String? // who settled it, e.g. "H-01" (Halifax's first); null on live sandbox hires
+  renterName     String? // the PayPal account holder's name, taken at booking
   authorizations Authorization[]
   photos         Photo[]
   findings       Finding[]

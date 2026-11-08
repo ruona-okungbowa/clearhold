@@ -66,6 +66,7 @@ export async function loadHires() {
       item: itemName(h.itemRef),
       itemRef: h.itemRef,
       branch: h.branch,
+      renterName: h.renterName,
       status: h.status,
       startAt: h.startAt,
       dueBackAt: h.dueBackAt,
