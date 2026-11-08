@@ -131,6 +131,7 @@ export default async function YourReturnPage({ params }: PageProps<'/r/[token]'>
                           what={angleName(f.angle)}
                           photo={photo}
                           captions={[`Pick-up, ${dayLabel(hire.startAt)}`, `Hand-back${hire.returnedAt ? `, ${dayLabel(hire.returnedAt)}` : ''}`]}
+                          zoom
                         />
                       )}
                       {clause?.chargeable && amount > 0 && (

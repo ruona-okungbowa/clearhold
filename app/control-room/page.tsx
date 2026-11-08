@@ -2,12 +2,13 @@ import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { connection } from 'next/server';
 import { staffUrl, StaffPage } from '@/app/(lab)/chrome';
+import type { EvidenceFinding } from '@/components/studio/EvidencePair';
 import { aiEnabled, aiModels } from '@/lib/ai';
 import { SHOPS } from '@/lib/catalogue';
 import { db } from '@/lib/db';
 import { amountPence } from '@/lib/hold';
-import { ANGLES } from '@/lib/schedule';
-import { loadHires, type HireView } from '@/lib/staff-view';
+import { ANGLES, CLAUSES } from '@/lib/schedule';
+import { findingChip, loadHires, type HireView } from '@/lib/staff-view';
 import { Room, type Kpi } from './room';
 import { getSavedLayouts, LAYOUT_ROLE_COOKIE } from './saved-layout';
 
@@ -21,6 +22,21 @@ function hrefOf(h: HireView) {
   return by[h.step.href](h.ref);
 }
 
+function findingSummary(f: HireView['findings'][number]): EvidenceFinding {
+  const clause = CLAUSES.find((c) => c.id === f.clauseId);
+  const [chip, outcome] = findingChip(f);
+  const pence = amountPence(f);
+  return {
+    clause: clause ? `${clause.id} · ${clause.name}` : '',
+    chip,
+    outcome,
+    amount: pence > 0 ? `£${(pence / 100).toFixed(2)}` : f.outcome === 'owner_look' && f.setGBP === null ? 'No amount set' : 'No charge',
+    confidence: f.confidence,
+    description: f.description,
+    reason: f.reason,
+  };
+}
+
 // The finding a person most needs to see: a charge or an owner look first, then anything with a return photo.
 function evidenceOf(h: HireView) {
   const f =
@@ -31,6 +47,7 @@ function evidenceOf(h: HireView) {
     evidenceReturnId: f?.returnPhotoId ?? '',
     evidenceBox: f?.box ? JSON.stringify(f.box) : '',
     evidenceWhat: f ? (ANGLES.find((a) => a.id === f.angle)?.short ?? f.angle) : '',
+    evidenceFinding: f ? JSON.stringify(findingSummary(f)) : '',
   };
 }
 

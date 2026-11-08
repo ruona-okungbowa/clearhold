@@ -8,7 +8,7 @@ import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import type { AgFieldRole, AgWidgetData, AgWidgetDataFormat, AgWidgetFieldReference, AgWidgetParams } from 'ag-studio';
 import type { AgWidgetDefinition } from 'ag-studio-react';
-import { Chip, gbp, type ChipKind } from '@/app/(lab)/chrome';
+import { Chip, gbp, staffUrl, type ChipKind } from '@/app/(lab)/chrome';
 import { EvidencePair as Crops, type Box } from '@/app/(lab)/evidence';
 import st from '@/app/(lab)/staff.module.css';
 import w from '@/app/(lab)/wire.module.css';
@@ -29,6 +29,7 @@ const FIELDS = {
   returnId: { id: 'hires.evidenceReturnId', label: 'Return photo', role: 'category' },
   box: { id: 'hires.evidenceBox', label: 'Box', role: 'category' },
   what: { id: 'hires.evidenceWhat', label: 'Angle', role: 'category' },
+  finding: { id: 'hires.evidenceFinding', label: 'Top finding', role: 'category' },
 } satisfies Record<string, { id: string; label: string; role: AgFieldRole }>;
 
 type Key = keyof typeof FIELDS;
@@ -40,7 +41,10 @@ export interface EvidencePairState extends AgWidgetData<EvidencePairDataMapping,
   type: 'evidence-pair';
 }
 
-type Row = { hireRef: string; chip: ChipKind; status: string; look: string; branch: string; holdOpen: boolean; held: number; settled: boolean; next: string; nextHref: string; pickupId: string; returnId: string; box: string; what: string };
+type Row = { hireRef: string; chip: ChipKind; status: string; look: string; branch: string; holdOpen: boolean; held: number; settled: boolean; next: string; nextHref: string; pickupId: string; returnId: string; box: string; what: string; finding: string };
+
+// The hire's top finding, as the page sends it: one JSON field, like the box, since Studio fields hold primitives.
+export type EvidenceFinding = { clause: string; chip: ChipKind; outcome: string; amount: string; confidence: number; description: string; reason: string };
 
 const photo = (id: string) => `/api/photos/${id}`;
 
@@ -85,6 +89,8 @@ export function EvidencePair(params: AgWidgetParams<EvidencePairState>) {
   const row = rows.length === 1 ? rows[0] : (rows.find((r) => r.hireRef === firstRef) ?? rows[0]);
   // A root element even with no rows: Studio attaches the widget by the DOM of its first render.
   if (!row) return <div style={{ height: '100%' }} />;
+  const finding = row.finding ? (JSON.parse(row.finding) as EvidenceFinding) : null;
+  const review = staffUrl.approve(row.hireRef);
 
   return (
     <section className={st.widget} aria-labelledby="ev-title">
@@ -106,6 +112,26 @@ export function EvidencePair(params: AgWidgetParams<EvidencePairState>) {
       ) : (
         <p className={w.sSub}>No findings yet for this hire.</p>
       )}
+      {finding && (
+        <div className={st.fBody}>
+          {finding.clause && (
+            <p className={w.sSub}>
+              Clause <b>{finding.clause}</b>
+            </p>
+          )}
+          <div className={st.fTop}>
+            <Chip kind={finding.chip}>{finding.outcome}</Chip>
+            <b>{finding.amount}</b>
+            <span>
+              Confidence <b>{Math.round(finding.confidence * 100)}%</b>
+            </span>
+          </div>
+          <div>
+            <p>{finding.description}</p>
+            <p className={w.sSub}>{finding.reason}</p>
+          </div>
+        </div>
+      )}
       <dl className={w.kv}>
         <div>
           <dt>Look</dt>
@@ -120,9 +146,17 @@ export function EvidencePair(params: AgWidgetParams<EvidencePairState>) {
           <dd>{row.holdOpen ? gbp(row.held) : '—'}</dd>
         </div>
       </dl>
-      <Link href={row.nextHref} className={w.btn}>
-        {row.settled ? 'Open the hire' : row.next}
-      </Link>
+      {finding && (
+        <Link href={review} className={w.btn}>
+          Review and approve →
+        </Link>
+      )}
+      {/* Money steps ("Release", "Approve or lower") are only named on the approve page. */}
+      {row.nextHref !== review && (
+        <Link href={row.nextHref} className={finding ? w.btnGhost : w.btn}>
+          {row.settled ? 'Open the hire' : row.next}
+        </Link>
+      )}
     </section>
   );
 }
@@ -152,7 +186,7 @@ export const evidencePairWidget: AgWidgetDefinition<'evidence-pair', EvidencePai
     dataMapping: Object.fromEntries(KEYS.map((k) => [k, [{ id: FIELDS[k].id }]])) as EvidencePairDataMapping,
   },
   comp: EvidencePair,
-  defaultSize: { width: 400, height: 460 },
+  defaultSize: { width: 400, height: 700 },
   minSize: { width: 300, height: 320 },
   ai: { description: "The selected hire's pick-up and return photos side by side, its status and its next step." },
 };
