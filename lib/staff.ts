@@ -29,6 +29,12 @@ export async function verifyStaff(token: string | undefined) {
 
 export const isStaff = async () => verifyStaff((await cookies()).get(STAFF_COOKIE)?.value);
 
+// For route handlers: reads the request's own Cookie header, so it works outside a Next request scope too.
+export function isStaffRequest(req: Request) {
+  const pair = req.headers.get('cookie')?.split(/;\s*/).find((c) => c.startsWith(`${STAFF_COOKIE}=`));
+  return verifyStaff(pair?.slice(STAFF_COOKIE.length + 1));
+}
+
 export async function requireStaff() {
   if (!(await isStaff())) throw new Error('Staff only');
 }

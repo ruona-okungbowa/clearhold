@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { z } from 'zod';
 import { aiModels, anthropicKey } from '@/lib/ai';
-import { isStaff } from '@/lib/staff';
+import { isStaffRequest } from '@/lib/staff';
 
 // Proxy for AG Studio's Claude adapter (lib/studio/anthropic-adapter.ts). The adapter runs in the browser and POSTs
 // the Messages request here. This checks staff, adds the server's key and streams Claude's events straight back,
@@ -23,7 +23,7 @@ const Body = z.object({
 const error = (status: number, message: string) => Response.json({ error: { message } }, { status });
 
 export async function POST(request: Request) {
-  if (!(await isStaff())) return error(401, 'Sign in as staff to use the assistant.');
+  if (!(await isStaffRequest(request))) return error(401, 'Sign in as staff to use the assistant.');
 
   const apiKey = anthropicKey();
   if (!apiKey) return error(503, 'The AI assistant is not configured: set ANTHROPIC_API_KEY in .env.local.');
