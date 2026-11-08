@@ -4,18 +4,17 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { connection } from 'next/server';
-import { Chip, staffUrl, StaffPage, type ChipKind } from '@/app/(lab)/chrome';
+import { StaffPage } from '@/app/(lab)/chrome';
 import st from '@/app/(lab)/staff.module.css';
 import w from '@/app/(lab)/wire.module.css';
 import { db } from '@/lib/db';
 import { getDispute, listDisputes, type DisputeDetails } from '@/lib/paypal';
+import { CasesGrid, type CaseRow as Case } from './cases-grid';
 
 export const metadata: Metadata = { title: 'Disputes' };
 
 const DAY = 86_400_000;
 const OPEN_DISPUTE = new Set(['OPEN', 'WAITING_FOR_SELLER_RESPONSE', 'WAITING_FOR_BUYER_RESPONSE', 'UNDER_REVIEW']);
-
-type Case = { hireRef: string | null; type: string; reason: string; charged: number | null; daysLeft: number | null; chip: ChipKind; status: string; open: boolean };
 
 const sentence = (s: string) => s.charAt(0) + s.slice(1).toLowerCase().replaceAll('_', ' ');
 
@@ -144,38 +143,7 @@ export default async function DisputesPage({ searchParams }: PageProps<'/dispute
         {shown.length === 0 ? (
           <p className={w.sSub}>{all ? 'No cases yet.' : 'No open cases.'}</p>
         ) : (
-          <div className={st.gridWrap}>
-            <table className={st.grid}>
-              <thead>
-                <tr>
-                  <th>Hire</th>
-                  <th>Type</th>
-                  <th>Reason</th>
-                  <th className={st.right}>Charged</th>
-                  <th className={st.right}>Days to respond</th>
-                  <th>Status</th>
-                  <th>
-                    <span className={w.srOnly}>Open</span>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {shown.map((c, i) => (
-                  <tr key={`${c.hireRef}-${c.type}-${i}`}>
-                    <td>{c.hireRef ?? '—'}</td>
-                    <td>{c.type}</td>
-                    <td>{c.reason}</td>
-                    <td className={st.right}>{c.charged === null ? '—' : `£${c.charged.toFixed(2)}`}</td>
-                    <td className={`${st.right} ${c.daysLeft !== null && c.daysLeft <= 3 ? st.hot : ''}`}>{c.daysLeft ?? '—'}</td>
-                    <td>
-                      <Chip kind={c.chip}>{c.status}</Chip>
-                    </td>
-                    <td>{c.hireRef && <Link href={staffUrl.dispute(c.hireRef)}>Open</Link>}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <CasesGrid rows={shown} />
         )}
       </section>
     </StaffPage>
