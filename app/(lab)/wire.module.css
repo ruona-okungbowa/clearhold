@@ -556,13 +556,18 @@
 
 .rFoot {
   background: var(--sky);
-  padding: 48px var(--gutter) 32px;
+  padding: 20px var(--gutter) 16px;
   margin-top: 120px;
   overflow: hidden;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px 32px;
 }
 .rFootMark {
   display: block;
-  font-size: min(22.4vw, 400px);
+  font-size: clamp(36px, 4vw, 56px);
   font-weight: 800;
   line-height: 0.8;
   letter-spacing: -0.055em;
@@ -572,7 +577,6 @@
 }
 .rFootNote {
   font-size: 15px;
-  margin-top: 24px;
 }
 .rFootNote a {
   color: var(--choc);
@@ -580,9 +584,6 @@
 @media (max-width: 900px) {
   .rFoot {
     margin-top: 80px;
-  }
-  .rFootMark {
-    font-size: 21vw;
   }
 }
 
