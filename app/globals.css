@@ -6,6 +6,21 @@ body {
   font-family: var(--pp-font);
 }
 
+/* The ledger room's tokens. On :root because AG Studio renders popups in <body>, outside any screen's root. */
+:root {
+  --l-ground: #f2f4f5;
+  --l-ink: #18232b;
+  --l-muted: #53606a;
+  --l-blue: #1c6390;
+  --l-line: #dde3e7;
+  --l-head: #f8fafb;
+  --l-hover: #f5f9fc;
+  --l-selected: #eaf2f8;
+  --amber: #8a4b00;
+  --green: #1f6b3a;
+  --ledger: 'IBM Plex Sans', system-ui, sans-serif;
+}
+
 /*
  * PayPal design tokens: the single source of truth for the pages (through the Tailwind colours
  * below, e.g. bg-pp-blue) and for the AG Studio theme (lib/studio/theme.ts), which references

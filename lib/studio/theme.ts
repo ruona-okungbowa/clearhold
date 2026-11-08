@@ -1,101 +1,108 @@
-// AG Studio theme, to become the control room's. Every value points at a design token from
-// app/globals.css, the same variables the shell's Tailwind classes use, so Studio renders as
-// part of the page rather than a component embedded in it: change a token there and the shell,
-// widgets, grids and charts all follow.
+// AG Studio theme for the staff "ledger room". Every value points at a design token from app/globals.css, the same
+// variables the staff screens' CSS Modules use, so Studio renders as part of the page rather than a component
+// embedded in it: change a token there and the shell, widgets, grids and charts all follow.
 
 import { studioTheme } from 'ag-studio';
 
-const token = (name: string) => `var(--pp-${name})`;
-const line = (color: string) => ({ width: 1, color: token(color) });
+const line = (color: string) => ({ width: 1, color });
 
+const INK = 'var(--l-ink)';
+const MUTED = 'var(--l-muted)';
+const RULE = 'var(--l-line)';
+const BLUE = 'var(--l-blue)';
+const FONT = 'var(--ledger)';
+const WHITE = '#ffffff';
+
+const CHART_COLOURS = [BLUE, INK, 'var(--amber)', 'var(--green)', MUTED];
 const palette = Object.fromEntries(
-  Array.from({ length: 10 }, (_, i) => [
-    [`chartPaletteFills${i + 1}Color`, token(`chart-${i + 1}`)],
-    [`chartPaletteStrokes${i + 1}Color`, token(`chart-${i + 1}`)],
-  ]).flat(),
+  Array.from({ length: 10 }, (_, i) => {
+    const colour = CHART_COLOURS[i % CHART_COLOURS.length];
+    return [
+      [`chartPaletteFills${i + 1}Color`, colour],
+      [`chartPaletteStrokes${i + 1}Color`, colour],
+    ];
+  }).flat(),
 );
 
-export const agStudioPayPalTheme = studioTheme.withParams({
+export const agStudioLedgerTheme = studioTheme.withParams({
   // Shared by Studio's UI, grids and charts.
-  fontFamily: token('font'),
+  fontFamily: FONT,
   fontSize: 14,
-  textColor: token('ink'),
-  foregroundColor: token('ink'),
-  subtleTextColor: token('muted'),
-  backgroundColor: token('surface'),
-  borderColor: token('border'),
-  accentColor: token('blue'),
-  iconColor: token('navy'),
-  rowHoverColor: token('highlight'),
+  textColor: INK,
+  foregroundColor: INK,
+  subtleTextColor: MUTED,
+  backgroundColor: WHITE,
+  borderColor: RULE,
+  accentColor: BLUE,
+  iconColor: INK,
+  rowHoverColor: 'var(--l-hover)',
 
-  // No frame: the canvas is the page's own background. Each widget is inset 12px inside its
-  // grid cell, so 20px of padding puts widget edges on the header's 32px gutter.
+  // No frame: the canvas is the page's own background.
   studioWrapperBorder: false,
   studioWrapperBorderRadius: 0,
   studioWrapperSpacing: 0,
-  studioWrapperBackgroundColor: token('canvas'),
+  studioWrapperBackgroundColor: 'var(--l-ground)',
   studioCanvasBorder: false,
   studioCanvasBorderRadius: 0,
   studioCanvasShadow: false,
-  studioCanvasBackgroundColor: token('canvas'),
-  studioCanvasPadding: 20,
-  // Slightly taller rows than the default 16px make room for card padding.
-  studioCanvasRowHeight: 18,
-  studioCanvasFontFamily: token('font'),
+  studioCanvasBackgroundColor: 'var(--l-ground)',
+  studioCanvasPadding: 0,
+  studioCanvasRowHeight: 16,
+  studioCanvasFontFamily: FONT,
 
-  // Widgets are the shell's cards: white, 1px border, 8px radius.
-  studioWidgetBackgroundColor: token('surface'),
-  studioWidgetBorder: line('border'),
-  studioWidgetBorderRadius: 8,
-  studioWidgetPadding: 10,
-  studioWidgetTitleFontFamily: token('font'),
-  studioWidgetTitleFontSize: 16,
+  // Widgets are the ledger's panels. Studio's border param is all four sides, so the 3px top rule is .studio in
+  // app/(lab)/staff.module.css.
+  studioWidgetBackgroundColor: WHITE,
+  studioWidgetBorder: false,
+  studioWidgetBorderRadius: 0,
+  studioWidgetPadding: 20,
+  studioWidgetTitleFontFamily: FONT,
+  studioWidgetTitleFontSize: 18,
   studioWidgetTitleFontWeight: 600,
-  studioWidgetTitleTextColor: token('navy'),
-  studioWidgetSubtitleFontFamily: token('font'),
+  studioWidgetTitleTextColor: INK,
+  studioWidgetSubtitleFontFamily: FONT,
   studioWidgetSubtitleFontSize: 13,
-  studioWidgetSubtitleTextColor: token('muted'),
-  studioWidgetCaptionFontFamily: token('font'),
+  studioWidgetSubtitleTextColor: MUTED,
+  studioWidgetCaptionFontFamily: FONT,
   studioWidgetCaptionFontSize: 13,
-  studioWidgetCaptionTextColor: token('muted'),
-  studioWidgetResizeBorderColor: token('blue'),
+  studioWidgetCaptionTextColor: MUTED,
+  studioWidgetResizeBorderColor: BLUE,
 
-  // Edit-mode panels read as more of the sidebar.
-  studioPanelContainerBackgroundColor: token('surface'),
-  studioPanelContainerBorder: line('border'),
+  // Edit-mode panels.
+  studioPanelContainerBackgroundColor: WHITE,
+  studioPanelContainerBorder: line(RULE),
   studioPanelContainerBorderRadius: 0,
-  studioPanelDividerColor: token('border'),
-  studioPanelDividerActiveColor: token('blue'),
-  studioPanelSectionBorderColor: token('border'),
-  studioPanelHeaderFontFamily: token('font'),
+  studioPanelDividerColor: RULE,
+  studioPanelDividerActiveColor: BLUE,
+  studioPanelSectionBorderColor: RULE,
+  studioPanelHeaderFontFamily: FONT,
   studioPanelHeaderFontWeight: 600,
-  studioPanelChevronButtonHoverBackgroundColor: token('highlight'),
-  studioPanelChevronButtonHoverColor: token('blue'),
-  // Selected toggles match the sidebar's selected item: highlight fill, blue text and edge.
-  studioToggleButtonActiveBackgroundColor: token('highlight'),
-  studioToggleButtonActiveBorderColor: token('blue'),
-  studioToggleButtonActiveColor: token('blue'),
+  studioPanelChevronButtonHoverBackgroundColor: 'var(--l-hover)',
+  studioPanelChevronButtonHoverColor: BLUE,
+  studioToggleButtonActiveBackgroundColor: 'var(--l-selected)',
+  studioToggleButtonActiveBorderColor: BLUE,
+  studioToggleButtonActiveColor: BLUE,
 
-  // Grid widgets: muted semibold headers, light dividers, roomy rows.
-  gridFontFamily: token('font'),
+  // Built-in grid widgets (a person can add one in Edit layout).
+  gridFontFamily: FONT,
   gridFontSize: 14,
-  gridCellTextColor: token('ink'),
-  gridHeaderBackgroundColor: token('surface'),
-  gridHeaderTextColor: token('muted'),
+  gridCellTextColor: INK,
+  gridHeaderBackgroundColor: 'var(--l-head)',
+  gridHeaderTextColor: MUTED,
   gridHeaderFontWeight: 600,
   gridHeaderFontSize: 13,
-  gridRowHeight: 40,
-  gridRowBorder: line('gridline'),
-  gridHeaderRowBorder: line('border'),
-  gridPinnedRowBorder: line('border'),
-  gridRowHoverColor: token('highlight'),
+  gridRowHeight: 44,
+  gridRowBorder: line(RULE),
+  gridHeaderRowBorder: line(RULE),
+  gridPinnedRowBorder: line(RULE),
+  gridRowHoverColor: 'var(--l-hover)',
   gridWrapperBorder: false,
 
   // Charts.
-  chartFontFamily: token('font'),
-  chartTextColor: token('ink'),
-  chartSubtleTextColor: token('muted'),
-  chartAxisLineColor: token('border'),
-  chartGridLineColor: token('gridline'),
+  chartFontFamily: FONT,
+  chartTextColor: INK,
+  chartSubtleTextColor: MUTED,
+  chartAxisLineColor: RULE,
+  chartGridLineColor: RULE,
   ...palette,
 });
