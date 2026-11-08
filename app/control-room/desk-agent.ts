@@ -1,10 +1,10 @@
 // The control room's desk agent: answers questions about holds, hires and findings, and hands widget work to
-// AG's own page and widget agents. It runs on AG Studio's OpenAI adapter (lib/studio/openai-adapter.ts ->
-// /api/ai/responses) and has no tool that moves money or reaches a renter: approving, lowering, capturing and
+// AG's own page and widget agents. It runs on Claude through lib/studio/anthropic-adapter.ts -> /api/ai/responses
+// and has no tool that moves money or reaches a renter: approving, lowering, capturing and
 // releasing stay on the hire's pages, behind a person and a signed approval.
 
 import { createAiHarness, directLlmRunner, type AgAiHarnessSetup, type AgAiPromptStarter } from 'ag-studio';
-import { openaiAdapter } from '@/lib/studio/openai-adapter';
+import { anthropicAdapter } from '@/lib/studio/anthropic-adapter';
 
 type Row = Record<string, unknown>;
 
@@ -55,6 +55,7 @@ You are the desk agent in a formalwear hire shop's control room. Staff ask you a
 - Use @field[id], @widget[id] and @table[id] references.
 
 ## Widgets
+When staff ask to show, filter or narrow the hires or holds, change what they see: delegate to Widget with "This is a modify", naming the widget of type 'work-queue' on the current page, and have it add a widget filter. @field[hires.ageDays] is the hold's age in days, @field[hires.heldGBP] the money still held, @field[hires.holdOpen] whether a hold is open, @field[hires.branch] the shop, @field[hires.stepStatus] the status and @field[hires.look] the look. Then say in one sentence what the queue now shows.
 To add a widget, delegate to Page (type 'page') to place it, then to Widget (type 'widget', with the widgetType and the widgetId Page returned) to configure it. Never stop after Page: an unconfigured widget is empty. To filter a widget, delegate to Widget with "This is a modify".
 When you report holds at risk, also show them: add a Hold timeline (widgetType 'hold-timeline') and have Widget give it a widget filter on @field[holds.id] keeping only the at-risk hold ids. Skip this if the page already has a Hold timeline filtered to the same holds.
 
@@ -69,7 +70,7 @@ const PROMPT_STARTERS: AgAiPromptStarter[] = [
 // The first model is the default, the picker shows for two or more. The rows are the
 // ones the page handed Studio, so holds_at_risk reads exactly what the widgets show.
 export function buildDeskAi(models: string[], holds: Row[], hires: Row[]): AgAiHarnessSetup {
-  const adapter = openaiAdapter({ endpoint: '/api/ai', model: models[0] });
+  const adapter = anthropicAdapter({ endpoint: '/api/ai' });
 
   return ({ api }) => {
     const holdsAtRiskTool = api.defineAiTool({
