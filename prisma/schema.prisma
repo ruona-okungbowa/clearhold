@@ -97,6 +97,9 @@ model Contest {
   photoId    String?
   status     String // open, resolved
   resolvedBy String?
+  // The total of the final approval the renter contested: the ceiling for every later approval on this hire.
+  // Null only on contests older than this column with no approval to read it from; approveCharges refuses those.
+  contestedGBP Decimal? @db.Decimal(10, 2)
   createdAt  DateTime @default(now())
 }
 

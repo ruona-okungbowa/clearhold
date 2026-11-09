@@ -7,6 +7,11 @@ import { capture, getAuthorization, reauthorize, voidHold } from './money';
 
 const DAY = 86_400_000;
 const HONOUR_DAYS = 3;
+const RENTER_WINDOW_MS = 48 * 3_600_000;
+
+// When staff may capture: the renter gets 48 hours from the final approval to accept or contest.
+export const renterDeadline = (approvedAt: Date) => new Date(approvedAt.getTime() + RENTER_WINDOW_MS);
+export const londonTime = (d: Date) => `${d.toLocaleString('en-GB', { timeZone: 'Europe/London', dateStyle: 'medium', timeStyle: 'short' })} London time`;
 
 // What a finding would take: a person's amount if one is set (0 waives it), otherwise the AI's.
 export const amountPence = (f: { setGBP: unknown; proposedGBP: unknown }) => Math.round(Number(f.setGBP ?? f.proposedGBP ?? 0) * 100);
@@ -84,9 +89,10 @@ export async function captureApproved(token: string, amountGBP: string) {
   return c;
 }
 
-// Final capture of the approved amount; PayPal releases the rest of the hold. Callers check who may do this:
-// staff through settleHire, the renter through their signed link (app/r/[token]/actions.ts acceptCharges).
-export async function settleHold(hireRef: string) {
+// Final capture of the approved amount; PayPal releases the rest of the hold. The renter's Accept calls this directly,
+// so it is immediate; check runs on the chosen approval first, which is how staff Settle adds the 48-hour wait.
+// Not in a 'use server' file: exported there it would be a public endpoint with no check.
+export async function settleHold(hireRef: string, check?: (approval: { createdAt: Date }) => void) {
   const { hire, auth } = await holdOf(hireRef);
   if (hire.status === 'contested') throw new Error(`The renter contested ${hireRef}: resolve it and approve again before settling`);
   const approval = await db.approval.findFirst({
@@ -94,6 +100,7 @@ export async function settleHold(hireRef: string) {
     orderBy: { createdAt: 'desc' },
   });
   if (!approval) throw new Error('No valid approval for a final capture: approve the charges first');
+  check?.(approval);
   await captureApproved(approval.token, approval.maxGBP.toFixed(2));
   await db.hire.update({ where: { id: hire.id }, data: { status: 'settled', returnedAt: hire.returnedAt ?? new Date() } });
 }

@@ -5,7 +5,7 @@ import { cancelOpenApprovals, createApproval, pence } from '@/lib/approval';
 import { audit, auditScope } from '@/lib/audit';
 import { db } from '@/lib/db';
 import { Prisma } from '@/lib/generated/prisma/client';
-import { amountPence, captureApproved, holdOf, releaseHire, resolveContest, settleHold } from '@/lib/hold';
+import { amountPence, captureApproved, holdOf, londonTime, releaseHire, renterDeadline, resolveContest, settleHold } from '@/lib/hold';
 import { inspect, isNewMark, MODEL, personPence, PROMPT_VERSION } from '@/lib/inspector';
 import { refusal } from '@/lib/refusal';
 import { ANGLES, CLAUSES } from '@/lib/schedule';
@@ -34,8 +34,8 @@ export async function runInspector(hireRef: string) {
   await inScope(hireRef, async () => {
     const { hire, auth, remainingGBP } = await holdOf(hireRef);
     if (hire.status === 'settled') throw new Error(`${hireRef} is already settled`);
-    // A re-run replaces the findings the renter contested, and could price them higher.
-    if (hire.status === 'contested') throw new Error(`The renter contested ${hireRef}: lower or remove charges, then approve`);
+    // A re-run replaces the findings the renter contested, and could price them higher, even once the contest is resolved.
+    if (await db.contest.count({ where: { hireId: hire.id } })) throw new Error('This hire was contested; its findings are final. Lower or remove charges instead');
     await cancelOpenApprovals(auth.id);
     const [photos, marks] = await Promise.all([
       db.photo.findMany({ where: { hireId: hire.id } }),
@@ -137,23 +137,29 @@ export async function approveCharges(hireRef: string) {
     const totalPence = findings.reduce((sum, f) => sum + amountPence(f), 0);
     if (totalPence <= 0) throw new Error('Nothing to approve: no finding carries a charge');
     if (totalPence > Math.round(remainingGBP * 100)) throw new Error('The findings total more than the remaining hold; run the inspector again');
-    if (hire.status === 'contested') {
-      // The renter contested the total in the last final approval; a contest can keep, lower or remove it, never raise it.
-      const contested = await db.approval.findFirst({ where: { authorizationId: auth.id, finalCapture: true }, orderBy: { createdAt: 'desc' } });
-      if (!contested || totalPence > pence(contested.maxGBP.toFixed(2)))
-        throw new Error(`A contest can only keep or lower the charge: £${(totalPence / 100).toFixed(2)} is more than the £${contested?.maxGBP.toFixed(2)} contested`);
+    // Open or resolved, a contest can keep, lower or remove the total the renter contested, never raise it.
+    const contest = await db.contest.findUnique({ where: { hireId: hire.id } });
+    if (contest) {
+      if (contest.contestedGBP === null) throw new Error('This contest has no contested total on record, so no charge can be approved on it');
+      if (totalPence > pence(contest.contestedGBP.toFixed(2)))
+        throw new Error(`A contest can only keep or lower the charge: £${(totalPence / 100).toFixed(2)} is more than the £${contest.contestedGBP.toFixed(2)} contested`);
     }
     // The renter has 48 hours from this approval to accept or contest, and their link lives exactly as long as it,
     // so 30 minutes would kill the link and the capture inside the window. The extra hour lets staff settle at its end.
     await createApproval({ authorizationId: auth.id, maxGBP: (totalPence / 100).toFixed(2), finalCapture: true, approver: STAFF }, 49 * 3_600_000);
-    if (hire.status === 'contested') await resolveContest(hire.id, `approved £${(totalPence / 100).toFixed(2)}`);
+    if (contest?.status === 'open') await resolveContest(hire.id, `approved £${(totalPence / 100).toFixed(2)}`);
   });
 }
 
-// Final capture of the approved amount (lib/hold.ts settleHold); PayPal releases the rest of the hold.
+// The staff path to the final capture (lib/hold.ts settleHold): only once the renter's 48 hours to answer are over.
 export async function settleHire(hireRef: string) {
   await requireStaff();
-  await inScope(hireRef, () => settleHold(hireRef));
+  await inScope(hireRef, () =>
+    settleHold(hireRef, ({ createdAt }) => {
+      const deadline = renterDeadline(createdAt);
+      if (new Date() < deadline) throw new Error(`The renter has until ${londonTime(deadline)} to accept or contest`);
+    }),
+  );
 }
 
 async function sixPhotos(hireRef: string, stage: 'pickup' | 'return') {

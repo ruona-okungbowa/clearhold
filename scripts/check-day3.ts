@@ -1,16 +1,24 @@
-// Self-check for the Day-3 guardrails: settlement (pure) and the money service's approval gate (database,
-// no PayPal: every capture here is refused before it reaches PayPal).
+// Self-check for the Day-3 guardrails: settlement (pure), the money service's approval gate, and the contest and
+// 48-hour guards through the real server actions (database; PayPal's two payment calls are stubbed, so nothing moves).
 //   npm run check:day3    exits non-zero on any failure; cleans up the rows it writes
 
+import 'next/dist/server/node-environment-baseline'; // first: Next's request stores need its AsyncLocalStorage global
 import assert from 'node:assert/strict';
+import { PaymentsController } from '@paypal/paypal-server-sdk';
+import { workAsyncStorage } from 'next/dist/server/app-render/work-async-storage.external';
+import { workUnitAsyncStorage } from 'next/dist/server/app-render/work-unit-async-storage.external';
+import { approveCharges, runInspector, setAmount, settleHire } from '../app/hire/[hireRef]/actions';
+import { acceptCharges, contestCharges } from '../app/r/[token]/actions';
 import { ApprovalError, claimApproval, createApproval } from '../lib/approval';
 import { auditScope } from '../lib/audit';
 import { db } from '../lib/db';
 import { clampPence, isNewMark, personPence, settle, type AngleFinding } from '../lib/inspector';
 import { capture } from '../lib/money';
+import { renterLink } from '../lib/renter-link';
 import { CLAUSES } from '../lib/schedule';
 
 const TAG = 'CHECK-DAY3';
+const HOUR = 3_600_000;
 const knownMarks = [{ id: 'KM-38-CUFF', description: 'Faint mark on the left cuff', firstSeen: 'hire #38' }];
 const photoIds = { front: { pickup: 'P1', return: 'R1' }, 'left-sleeve': { pickup: 'P3', return: 'R3' } };
 
@@ -123,6 +131,118 @@ async function checkGate() {
   assert.equal(await db.auditEvent.count({ where: { hireRef: TAG, type: 'capture.refused' } }), 5);
 }
 
+let paypalCaptures = 0;
+
+function stubPayPal() {
+  PaymentsController.prototype.captureAuthorizedPayment = (async () => {
+    paypalCaptures += 1;
+    return { statusCode: 201, headers: {}, result: { id: `${TAG}-C-${Date.now()}-${paypalCaptures}`, status: 'COMPLETED' } };
+  }) as never;
+  PaymentsController.prototype.getAuthorizedPayment = (async () => ({ statusCode: 200, headers: {}, result: { status: 'CAPTURED' } })) as never;
+}
+
+// The server actions call refresh(), which only runs inside a Server Action's request stores.
+const inAction = <T>(run: () => Promise<T>) =>
+  workAsyncStorage.run({ page: '/check-day3' } as never, () => workUnitAsyncStorage.run({ phase: 'action' } as never, run));
+
+let hires = 0;
+
+// A returned hire on a fake hold, with one £24 charge and a live renter link.
+async function returnedHire() {
+  const hireRef = `${TAG}-${Date.now()}-${++hires}`;
+  const now = new Date();
+  const hire = await db.hire.create({
+    data: { hireRef, branch: 'Halifax', itemRef: TAG, feeGBP: 28, depositGBP: 60, startAt: now, dueBackAt: now, returnedAt: now, status: 'returned', seeded: true },
+  });
+  const auth = await db.authorization.create({
+    data: { id: `${hireRef}-A`, hireId: hire.id, amountGBP: 60, status: 'CREATED', createdAt: now, honourEndsAt: now, expiresAt: new Date(now.getTime() + 24 * HOUR) },
+  });
+  const { id: findingId } = await db.finding.create({
+    data: { hireId: hire.id, angle: 'front', kind: 'new_damage', description: TAG, clauseId: 'S1', severity: 'moderate', confidence: 0.91, outcome: 'charge', reason: TAG, proposedGBP: 24, model: TAG, promptVersion: TAG },
+  });
+  const token = await renterLink(hireRef, new Date(now.getTime() + 24 * HOUR));
+  const newestFinal = () => db.approval.findFirstOrThrow({ where: { authorizationId: auth.id, finalCapture: true }, orderBy: { createdAt: 'desc' } });
+  const hireStatus = async () => (await db.hire.findUniqueOrThrow({ where: { id: hire.id } })).status;
+  const contest = () => db.contest.findUniqueOrThrow({ where: { hireId: hire.id } });
+  return { hireRef, hireId: hire.id, authId: auth.id, findingId, token, newestFinal, hireStatus, contest };
+}
+
+const approve = (hireRef: string) => inAction(() => approveCharges(hireRef));
+const staffSettle = (hireRef: string) => inAction(() => settleHire(hireRef));
+const backdate = (id: string, ms: number) => db.approval.update({ where: { id }, data: { createdAt: new Date(Date.now() - ms) } });
+const WINDOW_REFUSAL = /^The renter has until .+ London time to accept or contest$/;
+
+async function checkContestGuards() {
+  const h = await returnedHire();
+  await approve(h.hireRef);
+  assert.equal(await inAction(() => contestCharges(h.token, { findingId: null, note: 'Not me', photoId: null })), null);
+  assert.equal(await h.hireStatus(), 'contested');
+  assert.equal((await h.contest()).contestedGBP?.toFixed(2), '24.00');
+
+  const lower = new FormData();
+  lower.set('amountGBP', '20');
+  await inAction(() => setAmount(h.hireRef, h.findingId, lower));
+  await approve(h.hireRef);
+  assert.equal((await h.newestFinal()).maxGBP.toFixed(2), '20.00');
+  assert.equal((await h.contest()).status, 'resolved');
+  assert.equal(await h.hireStatus(), 'returned');
+
+  // (a) Resolved at a lower amount, and the inspector still can't replace the findings.
+  await assert.rejects(inAction(() => runInspector(h.hireRef)), /^Error: This hire was contested; its findings are final\. Lower or remove charges instead$/);
+  assert.equal((await db.finding.findUniqueOrThrow({ where: { id: h.findingId } })).setGBP?.toFixed(2), '20.00');
+  console.log('(a) resolved contest refuses Run Inspector: ok');
+
+  // (b) The ceiling is the £24 contested, not the £20 it was resolved at. setAmount can't raise, so the row is set directly.
+  const total = (proposedGBP: number, setGBP: number | null) => db.finding.update({ where: { id: h.findingId }, data: { proposedGBP, setGBP } });
+  const approvals = () => db.approval.count({ where: { authorizationId: h.authId } });
+  const before = await approvals();
+  await total(24.01, null);
+  await assert.rejects(approve(h.hireRef), /keep or lower the charge: £24\.01 is more than the £24\.00 contested/);
+  assert.equal(await approvals(), before);
+  await total(24, null);
+  await approve(h.hireRef);
+  assert.equal((await h.newestFinal()).maxGBP.toFixed(2), '24.00');
+  await total(24, 10);
+  await approve(h.hireRef);
+  assert.equal((await h.newestFinal()).maxGBP.toFixed(2), '10.00');
+  assert.equal((await h.contest()).status, 'resolved');
+  console.log('(b) after a resolve, higher refused, equal and lower accepted: ok');
+
+  // (c) Once per hire, even after the first was resolved.
+  assert.match((await contestCharges(h.token, { findingId: null, note: 'Again', photoId: null })) ?? '', /already been contested/);
+  console.log('(c) second contest refused: ok');
+}
+
+async function checkRenterWindow() {
+  const inside = await returnedHire();
+  await approve(inside.hireRef);
+  const approval = await inside.newestFinal();
+  const captures = paypalCaptures;
+  await assert.rejects(staffSettle(inside.hireRef), (err: Error) => WINDOW_REFUSAL.test(err.message));
+  await backdate(approval.id, 48 * HOUR - 60_000);
+  await assert.rejects(staffSettle(inside.hireRef), (err: Error) => WINDOW_REFUSAL.test(err.message));
+  assert.equal(paypalCaptures, captures);
+  assert.equal((await inside.newestFinal()).usedAt, null);
+  assert.equal(await inside.hireStatus(), 'returned');
+
+  assert.equal(await inAction(() => acceptCharges(inside.token, approval.id)), null);
+  assert.equal(paypalCaptures, captures + 1);
+  assert.equal(await inside.hireStatus(), 'settled');
+  assert.equal((await db.capture.findUniqueOrThrow({ where: { approvalId: approval.id } })).amountGBP.toFixed(2), '24.00');
+  console.log('(d) staff refused inside 48 hours, renter Accept captures: ok');
+
+  const after = await returnedHire();
+  await approve(after.hireRef);
+  const closed = await after.newestFinal();
+  await backdate(closed.id, 48 * HOUR + 60_000);
+  await staffSettle(after.hireRef);
+  assert.equal(paypalCaptures, captures + 2);
+  assert.equal(await after.hireStatus(), 'settled');
+  assert.ok((await after.newestFinal()).usedAt);
+  assert.equal((await db.capture.findUniqueOrThrow({ where: { approvalId: closed.id } })).finalCapture, true);
+  console.log('(e) staff settle after 48 hours captures: ok');
+}
+
 async function main() {
   checkSettlement();
   console.log('settlement: ok');
@@ -130,6 +250,9 @@ async function main() {
   console.log('item marks: ok');
   await auditScope.run(TAG, checkGate);
   console.log('approval gate: ok');
+  stubPayPal();
+  await checkContestGuards();
+  await checkRenterWindow();
 }
 
 main()
@@ -138,7 +261,13 @@ main()
     process.exitCode = 1;
   })
   .finally(async () => {
+    const hire = { hireRef: { startsWith: TAG } };
+    await db.contest.deleteMany({ where: { hire } });
+    await db.finding.deleteMany({ where: { hire } });
+    await db.capture.deleteMany({ where: { authorizationId: { startsWith: TAG } } });
     await db.approval.deleteMany({ where: { authorizationId: { startsWith: TAG } } });
-    await db.auditEvent.deleteMany({ where: { hireRef: TAG } });
+    await db.authorization.deleteMany({ where: { hire } });
+    await db.hire.deleteMany({ where: hire });
+    await db.auditEvent.deleteMany({ where: { hireRef: { startsWith: TAG } } });
     await db.$disconnect();
   });

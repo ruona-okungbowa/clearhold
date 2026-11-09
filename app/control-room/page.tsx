@@ -80,7 +80,7 @@ async function load() {
     // No renterName: Studio's data sources are readable by the desk agent, and it must not see renters' names.
     db.hire.findMany({ omit: { createdAt: true, renterName: true }, orderBy: { startAt: 'asc' } }),
     db.finding.findMany({ omit: { knownMarkId: true, model: true, promptVersion: true, createdAt: true }, orderBy: { createdAt: 'asc' } }),
-    // The same test settleHire applies; the token stays on the server.
+    // The same approval settleHire picks, whose 48-hour check still applies on click; the token stays on the server.
     db.approval.findMany({ where: { finalCapture: true, usedAt: null, expiresAt: { gt: new Date() } }, select: { authorizationId: true } }),
     db.contest.findMany({ select: { hireId: true, note: true, photoId: true, status: true } }),
     db.capture.findMany({ where: { finalCapture: true, amountGBP: { gt: 0 } }, select: { authorizationId: true, amountGBP: true } }),

@@ -211,6 +211,7 @@ function build(now: number) {
         const contestRate = staffCode === HIGH_CONTEST_CODE ? 0.3 : 0.045;
         const contested = outcome === 'charged' && chance(contestRate);
         let contestStatus = 'resolved';
+        const contestedGBP = totalOf(fs); // before the contest lowers anything below
         if (contested) {
           const c = rand();
           // Kept as charged (most); lowered by setting an amount below the AI's; or removed (every charge set to 0).
@@ -296,6 +297,7 @@ function build(now: number) {
             note: pick(CONTEST_NOTES),
             status: contestStatus,
             resolvedBy: contestStatus === 'resolved' ? approver : null,
+            contestedGBP,
             createdAt: d(returnedAt + (1 + rand()) * HOUR),
           });
         if (charges) {

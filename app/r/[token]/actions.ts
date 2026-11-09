@@ -1,7 +1,8 @@
 'use server';
 
-// The renter's two answers to the charges, each checked against their signed link: Accept runs the same final capture as staff (settleHold),
-// Contest (once per hire) pulls the approval back to staff. Refusals come back as text for the page to show.
+// The renter's two answers to the charges, each checked against their signed link: Accept captures at once, without
+// the 48-hour wait staff have, and Contest (once per hire) pulls the approval back to staff. Refusals come back as
+// text for the page to show.
 
 import { refresh } from 'next/cache';
 import { z } from 'zod';
@@ -53,9 +54,16 @@ export async function contestCharges(token: string, input: z.input<typeof Contes
       if (findingId && !(await db.finding.count({ where: { id: findingId, hireId: hire.id } }))) throw new Error('That finding is not on this hire');
       if (photoId && !(await db.photo.count({ where: { id: photoId, hireId: hire.id, stage: 'contest' } }))) throw new Error('That photo is not on this hire');
 
+      // What the renter is contesting: the last total staff signed, on any of the hire's holds.
+      const contested = await db.approval.findFirst({
+        where: { authorizationId: { in: hire.authorizations.map((a) => a.id) }, finalCapture: true },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!contested) throw new Error('Staff have not approved a charge yet, so there is nothing to contest');
+
       try {
         await db.$transaction(async (tx) => {
-          await tx.contest.create({ data: { hireId: hire.id, findingId, note, photoId, status: 'open' } });
+          await tx.contest.create({ data: { hireId: hire.id, findingId, note, photoId, status: 'open', contestedGBP: contested.maxGBP } });
           // Conditional, so a hire settled since the page loaded can't be reopened.
           const { count } = await tx.hire.updateMany({ where: { id: hire.id, status: { in: ['out', 'returned'] } }, data: { status: 'contested' } });
           if (!count) throw new Error(`This hire is ${hire.status}; it can no longer be contested`);
