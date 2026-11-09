@@ -10,7 +10,7 @@ import w from '@/app/(lab)/wire.module.css';
 import { verifyApproval } from '@/lib/approval';
 import { itemName } from '@/lib/catalogue';
 import { db } from '@/lib/db';
-import { amountPence, holdOf } from '@/lib/hold';
+import { amountPence, holdOf, londonTime, renterDeadline } from '@/lib/hold';
 import { CONFIDENCE_FLOOR } from '@/lib/inspector';
 import { renterLink } from '@/lib/renter-link';
 import { ANGLES, CLAUSES } from '@/lib/schedule';
@@ -43,6 +43,7 @@ export default async function ApprovePage({ params }: PageProps<'/hire/[hireRef]
   const settled = hire.status === 'settled';
   const contested = contest?.status === 'open';
   const open = settled ? null : openOf(approvals);
+  const deadline = open && renterDeadline(open.createdAt);
   const signed = open && (await verifyApproval(open.token).then(() => true, () => false));
   const link = open ? `/r/${await renterLink(hireRef, open.expiresAt)}` : null;
   const finalCapture = captures.find((c) => c.finalCapture && c.authorizationId === auth.id);
@@ -209,10 +210,20 @@ export default async function ApprovePage({ params }: PageProps<'/hire/[hireRef]
                   {signed ? 'signature verifies' : 'signature does not verify'}.
                 </p>
                 {link && <CopyLink path={link} />}
-                <p className={w.sSub}>The renter can accept or contest once before the approval expires. Capture waits for their answer or the deadline.</p>
-                <ActionButton action={settleAction.bind(null, hireRef)}>
-                  Capture {gbp(Number(open.maxGBP))} (final) and release {gbp(remainingGBP - Number(open.maxGBP))}
-                </ActionButton>
+                {deadline && new Date() < deadline ? (
+                  <>
+                    <p className={w.sSub}>
+                      The renter has until {londonTime(deadline)} to accept or contest. Staff can’t capture before then; if the renter accepts sooner, the charge is taken at that point.
+                    </p>
+                    <ActionButton action={settleAction.bind(null, hireRef)} disabled>
+                      Capture after {londonTime(deadline)}
+                    </ActionButton>
+                  </>
+                ) : (
+                  <ActionButton action={settleAction.bind(null, hireRef)}>
+                    Capture {gbp(Number(open.maxGBP))} (final) and release {gbp(remainingGBP - Number(open.maxGBP))}
+                  </ActionButton>
+                )}
                 {link && (
                   <Link href={link} className={w.btnGhost}>
                     See what the renter sees

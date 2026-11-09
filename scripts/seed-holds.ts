@@ -6,9 +6,12 @@
 // Safe to re-run: every row is upserted on its PayPal id or hire ref.
 
 import { readFileSync } from 'node:fs';
+import { cancelOpenApprovals, createApproval } from '../lib/approval';
+import { auditScope } from '../lib/audit';
 import { db } from '../lib/db';
 import { demoRenter } from './demo-renter';
-import { get, type Money } from '../lib/paypal';
+import { holdOf } from '../lib/hold';
+import { get, PayPalApiError, type Money } from '../lib/paypal';
 
 const HOLDS_FILE = 'scripts/.aged-holds.json';
 const FEE = 28;
@@ -70,6 +73,67 @@ async function upsertHold(h: HoldSeed) {
   console.log(`  ${h.authId.padEnd(18)} ${h.authStatus.padEnd(18)} £${h.amountGBP}  ${h.hireRef}`);
 }
 
+// Whether this PayPal app can still capture the hold; a hold under another sandbox seller reads as permission denied.
+const liveAtPayPal = (authId: string) =>
+  get<PayPalAuthorization>(`/v2/payments/authorizations/${encodeURIComponent(authId)}`).then(
+    (a) => a.status === 'CREATED' || a.status === 'PARTIALLY_CAPTURED',
+    (err: unknown) => {
+      if (err instanceof PayPalApiError && (err.status === 404 || err.message.includes('PERMISSION_DENIED'))) return false;
+      throw err;
+    },
+  );
+
+// For the video: a live sandbox hold (PayPal refuses a fake id) whose renter window closed an hour ago. The approval
+// lasts 14 days, not the usual 49 hours, so the hire stays capturable until it is filmed. It only takes a handed-over
+// hire with no contest and no real inspection, so a re-run renews its own work and never overwrites a real one.
+async function seedCaptureReady() {
+  const candidates = await db.hire.findMany({
+    where: {
+      seeded: false,
+      status: { in: ['out', 'returned'] },
+      contest: { is: null },
+      findings: { none: { model: { not: 'seed' } } },
+      authorizations: { some: { status: { in: ['CREATED', 'PARTIALLY_CAPTURED'] }, expiresAt: { gt: new Date() } } },
+    },
+    include: { authorizations: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    orderBy: { createdAt: 'desc' },
+  });
+  let ready: (typeof candidates)[number] | undefined;
+  for (const c of candidates) {
+    if (await liveAtPayPal(c.authorizations[0].id)) {
+      ready = c;
+      break;
+    }
+  }
+  if (!ready) throw new Error('No live hold is free for the staff capture demo: book a hire at /looks/<slug>, approve it as the sandbox buyer, hand it over, then re-run db:seed');
+  const { hireRef } = ready;
+  const { hire, auth } = await holdOf(hireRef);
+  await auditScope.run(hireRef, async () => {
+    await cancelOpenApprovals(auth.id);
+    await db.finding.deleteMany({ where: { hireId: hire.id } });
+    await db.finding.create({
+      data: {
+        hireId: hire.id,
+        angle: 'front',
+        kind: 'new_damage',
+        description: 'Make-up stain on the left lapel',
+        clauseId: 'S1',
+        severity: 'moderate',
+        confidence: 0.91,
+        outcome: 'charge',
+        reason: 'Seeded for the staff capture demo',
+        proposedGBP: 24,
+        model: 'seed',
+        promptVersion: 'seed',
+      },
+    });
+    const { id } = await createApproval({ authorizationId: auth.id, maxGBP: '24.00', finalCapture: true, approver: 'Priya (H-01)' }, 14 * DAY);
+    await db.approval.update({ where: { id }, data: { createdAt: new Date(Date.now() - 49 * 3_600_000) } });
+    await db.hire.update({ where: { id: hire.id }, data: { status: 'returned', returnedAt: hire.returnedAt ?? new Date() } });
+  });
+  console.log(`  ${hireRef} returned, £24.00 approved 49 hours ago: staff can capture at /hire/${hireRef}/approve`);
+}
+
 async function main() {
   const aged: AgedHold[] = JSON.parse(readFileSync(HOLDS_FILE, 'utf8'));
   console.log(`Aged holds from ${HOLDS_FILE} (live sandbox):`);
@@ -126,6 +190,9 @@ async function main() {
       expiresAt: addDays(createdAt, 29),
     });
   }
+
+  console.log('Ready for staff capture:');
+  await seedCaptureReady();
 }
 
 main()
