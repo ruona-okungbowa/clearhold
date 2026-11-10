@@ -12,7 +12,8 @@ export const metadata: Metadata = { title: 'Staff sign-in' };
 // Wireframe look, real action: signIn checks STAFF_PASSCODE and sets the cookie proxy.ts looks for.
 export default async function StaffLoginPage({ searchParams }: PageProps<'/staff-login'>) {
   const { next, error } = await searchParams;
-  const bad = Boolean(error);
+  const badName = error === 'name';
+  const bad = Boolean(error) && !badName;
   return (
     <div className={w.staff}>
       <a href="#main" className={w.skip}>
@@ -27,6 +28,24 @@ export default async function StaffLoginPage({ searchParams }: PageProps<'/staff
           </p>
           <h1 className={w.sH1}>Staff sign-in</h1>
           <p className={w.sSub}>For shop staff only. Renters don’t need an account: everything comes by email.</p>
+          <label className={w.sField}>
+            <span>Your name</span>
+            <input
+              name="name"
+              className={w.sInput}
+              autoComplete="name"
+              required
+              minLength={2}
+              maxLength={60}
+              aria-invalid={badName || undefined}
+              aria-describedby={badName ? 'name-error' : undefined}
+            />
+          </label>
+          {badName && (
+            <p id="name-error" role="alert" className={w.sErr}>
+              Give your name as letters (2 to 60): it is recorded on everything you approve or send.
+            </p>
+          )}
           <Passcode bad={bad} />
           <label className={w.sField}>
             <span>Shop</span>
@@ -40,7 +59,7 @@ export default async function StaffLoginPage({ searchParams }: PageProps<'/staff
             Sign in
           </button>
           <p className={w.sSub}>
-            Signed in for 8 hours on this device. Every approval you make is recorded with your staff code.
+            Signed in for 8 hours on this device. Every approval you make, and anything you send to PayPal, is recorded with your name.
           </p>
         </form>
       </main>

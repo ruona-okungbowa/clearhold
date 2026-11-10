@@ -23,6 +23,9 @@ model Hire {
   seeded         Boolean         @default(false) // seeded history vs live sandbox hire
   staffCode      String? // who settled it, e.g. "H-01" (Halifax's first); null on live sandbox hires
   renterName     String? // the PayPal account holder's name, taken at booking
+  // Set when staff accepted a PayPal dispute and PayPal refunded the renter. A column, not a status: every "is it
+  // still open" check reads status !== 'settled'.
+  refundedViaDisputeAt DateTime?
   authorizations Authorization[]
   photos         Photo[]
   findings       Finding[]
@@ -164,4 +167,40 @@ model StudioLayout {
   name      String   @unique
   state     Json
   updatedAt DateTime @updatedAt
+}
+
+// Our copy of a PayPal dispute matched to one of our captures. Written by the webhook, "Refresh from PayPal" and our own
+// responses; it only mirrors PayPal's status and never moves money.
+model DisputeCase {
+  id        String   @id // PayPal's dispute id
+  hireRef   String
+  captureId String // seller_transaction_id: the capture the buyer disputes
+  status    String // PayPal's: OPEN, WAITING_FOR_SELLER_RESPONSE, UNDER_REVIEW, RESOLVED, ...
+  reason    String?
+  amountGBP Decimal? @db.Decimal(10, 2) // PayPal's dispute_amount, as PayPal sent it
+  outcome   String?
+  updatedAt DateTime @updatedAt
+
+  @@index([hireRef])
+}
+
+// One answer we sent PayPal for a dispute: evidence, or accepting the claim. Written as "sending" before the call, so the
+// unique (disputeId, stage) key refuses a second send for the same stage and a retry reuses the same PayPal-Request-Id.
+model DisputeResponse {
+  id            String   @id @default(cuid())
+  disputeId     String
+  hireRef       String
+  kind          String // evidence, accept_claim
+  stage         String // evidence: PayPal's life-cycle stage plus that round's response due date; accept_claim: "accept"
+  sentBy        String // the signed-in staff member who clicked
+  sentAt        DateTime @default(now())
+  notes         String   @db.VarChar(2000)
+  photoIds      String[]
+  amountGBP     Decimal? @db.Decimal(10, 2) // accept_claim: PayPal's dispute amount, refunded
+  requestId     String   @unique
+  paypalDebugId String?
+  status        String // sending, sent, failed
+
+  @@unique([disputeId, stage])
+  @@index([hireRef])
 }

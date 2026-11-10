@@ -8,6 +8,7 @@ import { StaffPage } from '@/app/(lab)/chrome';
 import st from '@/app/(lab)/staff.module.css';
 import w from '@/app/(lab)/wire.module.css';
 import { db } from '@/lib/db';
+import { recordCase } from '@/lib/disputes';
 import { getDispute, listDisputes, type DisputeDetails } from '@/lib/paypal';
 import { CasesGrid, type CaseRow as Case } from './cases-grid';
 
@@ -26,6 +27,8 @@ async function loadCases() {
       return null;
     });
 
+  // Our copy of each matched dispute's status, so its case page knows about it. Reads only; never moves money.
+  await Promise.all((disputes ?? []).map(recordCase));
   const txnIds = (disputes ?? []).flatMap((d) => d.disputed_transactions?.flatMap((t) => t.seller_transaction_id ?? []) ?? []);
   const disputed = await db.capture.findMany({ where: { id: { in: txnIds } }, select: { id: true, authorizationId: true } });
   const hires = await db.hire.findMany({

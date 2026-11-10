@@ -1,5 +1,10 @@
-// Plain-fetch PayPal REST client for reads, webhook verification and disputes; money movement goes through
-// lib/money.ts and the PayPal SDK. Server-side only: it reads the client secret from the environment.
+// Plain-fetch PayPal REST client for reads, webhook verification and disputes. Deposit captures go through
+// lib/money.ts and the PayPal SDK; the dispute writes here (post, postMultipart) follow its rules: a caller-chosen
+// PayPal-Request-Id, the paypal-debug-id kept, and an AuditEvent row per call. Only server actions a signed-in person
+// clicked call them (app/disputes/[hireRef]/actions.ts); the model gets no tool and no route to them.
+// Server-side only: it reads the client secret from the environment.
+
+import { audit } from './audit';
 
 const BASE_URL = 'https://api-m.sandbox.paypal.com';
 const MAX_ATTEMPTS = 4;
@@ -9,8 +14,9 @@ export class PayPalApiError extends Error {
     readonly status: number,
     readonly path: string,
     body: string,
+    readonly debugId?: string | null,
   ) {
-    super(`PayPal ${status} on ${path}: ${body.slice(0, 300)}`);
+    super(`PayPal ${status} on ${path}${debugId ? ` (debug id ${debugId})` : ''}: ${body.slice(0, 300)}`);
     this.name = 'PayPalApiError';
   }
 }
@@ -61,6 +67,73 @@ export async function get<T>(path: string): Promise<T> {
   }
 }
 
+export type Sent<T> = { result: T; status: number; debugId: string | null };
+
+// A write: the same retries as get(), with one PayPal-Request-Id across every attempt, so a retry is a replay at PayPal.
+async function send<T>(op: string, path: string, requestId: string, body: BodyInit, type: string): Promise<Sent<T>> {
+  const started = Date.now();
+  for (let attempt = 1; ; attempt++) {
+    const res = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${await accessToken()}`, 'PayPal-Request-Id': requestId, 'Content-Type': type },
+      body,
+      cache: 'no-store',
+    });
+    if (res.status === 401 && attempt === 1) {
+      cachedToken = undefined;
+      continue;
+    }
+    if ((res.status === 429 || res.status >= 500) && attempt < MAX_ATTEMPTS) {
+      await new Promise((resolve) => setTimeout(resolve, 2 ** attempt * 250));
+      continue;
+    }
+    const debugId = res.headers.get('paypal-debug-id');
+    const text = await res.text();
+    let issue: string | undefined;
+    if (!res.ok)
+      try {
+        const parsed = JSON.parse(text) as { name?: string; details?: { issue?: string }[] };
+        issue = parsed.details?.[0]?.issue ?? parsed.name;
+      } catch {}
+    console.log(`[paypal] ${JSON.stringify({ op, requestId, status: res.status, debugId, issue })}`);
+    await audit({
+      actor: 'paypal',
+      type: op,
+      summary: `${op} ${res.status}${issue ? ` ${issue}` : ''}`,
+      status: res.status,
+      paypalDebugId: debugId,
+      idempotencyKey: requestId,
+      latencyMs: Date.now() - started,
+    });
+    if (!res.ok) throw new PayPalApiError(res.status, path, text, debugId);
+    return { result: (text ? JSON.parse(text) : {}) as T, status: res.status, debugId };
+  }
+}
+
+export const post = <T>(op: string, path: string, requestId: string, body: unknown) =>
+  send<T>(op, path, requestId, JSON.stringify(body), 'application/json');
+
+export type Part = { name: string; type: string; data: string | Buffer; filename?: string };
+
+// multipart/form-data built by hand, as PayPal's curl examples send it: the JSON part has a content type and no
+// filename (FormData would give a Blob part filename="blob"), each file part has its own name.
+export function postMultipart<T>(op: string, path: string, requestId: string, parts: Part[]) {
+  const boundary = `clearhold-${requestId.replace(/[^A-Za-z0-9]/g, '')}`;
+  const CRLF = '\r\n';
+  const body = Buffer.concat([
+    ...parts.flatMap((p) => [
+      Buffer.from(
+        `--${boundary}${CRLF}Content-Disposition: form-data; name="${p.name}"${p.filename ? `; filename="${p.filename}"` : ''}${CRLF}` +
+          `Content-Type: ${p.type}${CRLF}${CRLF}`,
+      ),
+      Buffer.isBuffer(p.data) ? p.data : Buffer.from(p.data),
+      Buffer.from(CRLF),
+    ]),
+    Buffer.from(`--${boundary}--${CRLF}`),
+  ]);
+  return send<T>(op, path, requestId, new Uint8Array(body), `multipart/form-data; boundary=${boundary}`);
+}
+
 // Asks PayPal whether a webhook delivery is genuine. `rawBody` goes in byte for byte: re-serialising
 // the event can change it and fail the check.
 export async function verifyWebhookSignature(
@@ -107,8 +180,16 @@ export type Dispute = {
   seller_response_due_date?: string;
 };
 
-// The detail fields the list leaves out; seller_transaction_id is our capture id.
-export type DisputeDetails = Dispute & { disputed_transactions?: { seller_transaction_id?: string }[] };
+// The detail fields the list leaves out; seller_transaction_id is our capture id. `links` holds the actions PayPal
+// allows right now (provide_evidence, accept_claim, ...): no link, no action.
+export type DisputeDetails = Dispute & {
+  disputed_transactions?: { seller_transaction_id?: string }[];
+  links?: { rel: string; href: string; method?: string }[];
+  evidences?: { evidence_type?: string; source?: string; date?: string }[];
+  allowed_response_options?: { accept_claim?: { accept_claim_types?: string[] } };
+};
+
+export const canDo = (d: DisputeDetails, rel: string) => Boolean(d.links?.some((l) => l.rel === rel));
 
 export const getDispute = (id: string) => get<DisputeDetails>(`/v1/customer/disputes/${encodeURIComponent(id)}`);
 
