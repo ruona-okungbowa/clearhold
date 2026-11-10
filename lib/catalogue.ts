@@ -63,9 +63,6 @@ export const SHOP_CODES: Record<string, string> = {
   Halifax: 'HAL',
   Leeds: 'LDS',
   Bradford: 'BRD',
-  Huddersfield: 'HUD',
-  Wakefield: 'WKF',
-  Dewsbury: 'DEW',
 };
 export const SHOPS = Object.keys(SHOP_CODES);
 
