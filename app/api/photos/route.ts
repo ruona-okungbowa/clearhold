@@ -5,6 +5,8 @@
 
 import { createHash } from 'node:crypto';
 import { put } from '@vercel/blob';
+import { audit } from '@/lib/audit';
+import { takesSamplePhotos } from '@/lib/catalogue';
 import { db } from '@/lib/db';
 import { verifyRenterLink } from '@/lib/renter-link';
 import { isStaff } from '@/lib/staff';
@@ -42,9 +44,15 @@ export async function POST(req: Request) {
   if (contest && (await db.contest.count({ where: { hireId: hire.id } })))
     return Response.json({ error: 'This hire has already been contested' }, { status: 409 });
 
+  // The judges' button: staff-only like any capture, and it only ever labels the photo. The marker lives in the
+  // pathname so a real retake of the angle clears it.
+  const sample = form.get('sample') === '1';
+  if (sample && (contest || !takesSamplePhotos(hire.itemRef)))
+    return Response.json({ error: 'Sample photos are only for blazer pick-ups and returns' }, { status: 400 });
+
   const bytes = Buffer.from(await photo.arrayBuffer());
   const sha256 = createHash('sha256').update(bytes).digest('hex');
-  const pathname = `hires/${hireRef}/${stage}/${angle}-${sha256.slice(0, 16)}.${ext}`;
+  const pathname = `hires/${hireRef}/${stage}/${angle}${sample ? '-sample' : ''}-${sha256.slice(0, 16)}.${ext}`;
   await put(pathname, bytes, { access: 'private', contentType: photo.type, addRandomSuffix: false, allowOverwrite: true });
 
   const row = { pathname, contentType: photo.type, sha256, serverAt: new Date() };
@@ -53,5 +61,6 @@ export async function POST(req: Request) {
     create: { hireId: hire.id, stage, angle, ...row },
     update: row,
   });
+  if (sample) await audit({ hireRef, actor: 'human', type: 'photo.sample', summary: `Sample photo used: ${stage}, ${angle}` });
   return Response.json({ id: saved.id, sha256, serverAt: saved.serverAt });
 }

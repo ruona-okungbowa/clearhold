@@ -7,7 +7,7 @@ import { LOOKS, SHOPS, feeOf } from '@/lib/catalogue';
 import s from '../screens.module.css';
 import w from '../wire.module.css';
 
-const OCCASIONS = ['All', ...LOOKS.map((l) => l.occasion)];
+const OCCASIONS = ['All', ...new Set(LOOKS.map((l) => l.occasion))];
 
 export function LookGrid() {
   const [occasion, setOccasion] = useState('All');
@@ -41,7 +41,7 @@ export function LookGrid() {
       <ul className={s.lookGrid}>
         {looks.map((look, i) => (
           <li key={look.slug}>
-            <Link href={`/look?l=${look.slug}`} className={s.lookCard}>
+            <Link href={`/looks/${look.slug}`} className={s.lookCard}>
               <div className={s.lookPic}>
                 {look.slug === 'bestman' && <span className={s.badge}>Most hired</span>}
                 <Image

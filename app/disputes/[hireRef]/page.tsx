@@ -78,8 +78,8 @@ export default async function DisputePage({ params }: PageProps<'/disputes/[hire
                     photo={photo}
                     className={st.sPair}
                     captions={[
-                      p ? `Pick-up · ${stamp(new Date(p.serverAt))} · sha256 ${short(p.sha256)}` : 'Pick-up',
-                      r ? `Return · ${stamp(new Date(r.serverAt))} · sha256 ${short(r.sha256)}` : 'Return',
+                      p ? `Pick-up · ${stamp(new Date(p.serverAt))} · sha256 ${short(p.sha256)}${p.sample ? ' · sample' : ''}` : 'Pick-up',
+                      r ? `Return · ${stamp(new Date(r.serverAt))} · sha256 ${short(r.sha256)}${r.sample ? ' · sample' : ''}` : 'Return',
                     ]}
                   />
                 </div>

@@ -3,8 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { addDays, clashes, startAllowed, type Booked } from '@/lib/booking';
 import { feeOf, HIRE_DAYS, lookItemRef, PRICE_LIST, SHOPS, type Look } from '@/lib/catalogue';
-import s from '../screens.module.css';
-import w from '../wire.module.css';
+import s from '../../screens.module.css';
+import w from '../../wire.module.css';
 import type { BookingInput } from './actions';
 import { PayPalHold } from './paypal-hold';
 
@@ -169,6 +169,12 @@ export function BookingPanel({ look, today, booked, clientId }: { look: Look; to
           <span>Weekend hire, cleaning included</span>
           <strong>£{fee}</strong>
         </p>
+        <p className={s.sumTotal}>
+          <span>
+            £{fee} hire fee + £{look.deposit} deposit, held on PayPal
+          </span>
+          <strong>£{fee + look.deposit}</strong>
+        </p>
         <p className={w.small}>
           Nothing is taken today. We place a hold on your PayPal for £{fee + look.deposit}: the £{fee} hire fee is taken when
           you collect, and the £{look.deposit} deposit is released when you hand it back.
@@ -183,7 +189,7 @@ export function BookingPanel({ look, today, booked, clientId }: { look: Look; to
       </section>
 
       <div>
-        <details className={w.details}>
+        <details className={w.details} open>
           <summary>The price list, if something needs fixing</summary>
           <div>
             <table className={s.priceTable}>

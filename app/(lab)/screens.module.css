@@ -827,7 +827,7 @@ ol.findList {
     grid-template-columns: 1fr;
   }
   .lookStage {
-    position: static;
+    position: relative;
     aspect-ratio: 1;
   }
   .sideSticky {
@@ -867,6 +867,41 @@ ol.findList {
   }
   .capLayout {
     padding-top: 16px;
+  }
+}
+
+.sampleBtns {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* What happens at return, under the look page's booking panel. */
+.returnStrip {
+  margin-top: 64px;
+  padding-top: 32px;
+  border-top: 1px solid currentColor;
+}
+.returnStrip a {
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.returnStrip ol {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 32px;
+  margin: 16px 0;
+  padding: 0;
+  list-style: none;
+}
+@media (max-width: 900px) {
+  .returnStrip {
+    margin-top: 40px;
+  }
+  .returnStrip ol {
+    grid-template-columns: 1fr;
+    gap: 16px;
   }
 }
 

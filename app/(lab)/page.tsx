@@ -115,7 +115,7 @@ export default function LandingPage() {
               </div>
               <div className={`${l.stepPic} ${l.bookPic}`}>
                 <div className={l.bookCard}>
-                  <p className={l.bookItem}>Wool blazer, size 12</p>
+                  <p className={l.bookItem}>Brown wool blazer, 40R</p>
                   <p className={`${w.muted} ${w.small}`}>
                     Fri 13 to Mon 16 Nov · Halifax
                   </p>

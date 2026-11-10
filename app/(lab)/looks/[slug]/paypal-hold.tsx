@@ -6,8 +6,8 @@
 import { useRouter } from 'next/navigation';
 import Script from 'next/script';
 import { useRef, useState, type RefObject } from 'react';
-import s from '../screens.module.css';
-import w from '../wire.module.css';
+import s from '../../screens.module.css';
+import w from '../../wire.module.css';
 import { confirmBooking, startBooking, type BookingInput } from './actions';
 
 type Buttons = (options: object) => { render(el: HTMLElement): Promise<void> };
