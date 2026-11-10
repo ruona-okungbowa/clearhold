@@ -1,4 +1,4 @@
-// The hire catalogue: six looks, the shops, and the renter wording of the price list. Fictional.
+// The hire catalogue: the looks (first is featured on the home page), the shops, and the renter wording of the price list. Fictional.
 // shortcut: constants, not tables; move to Look/Shop tables when the catalogue is edited by staff.
 
 import { ITEMS } from './schedule';
@@ -18,6 +18,11 @@ const DRESS = ['6', '8', '10', '12', '14', '16'];
 const SUIT = ['36R', '38R', '40R', '42R', '44R'];
 
 export const LOOKS: Look[] = [
+  {
+    slug: 'blazer', img: 'blazer-look', name: 'The wedding blazer', occasion: 'Wedding guest',
+    blurb: 'A long brown wool blazer with notched lapels and five buttons. Sharp over a dress or with tailored trousers, and warm enough for the walk to the reception.',
+    sizes: SUIT, pieces: [['Brown wool blazer', 28]], deposit: 60,
+  },
   {
     slug: 'blush', img: 'blush', name: 'Blush maxi', occasion: 'Wedding guest',
     blurb: 'Bias-cut satin that skims rather than clings, with a sage clutch to finish. Made for a summer ceremony and dancing after.',
@@ -51,7 +56,7 @@ export const LOOKS: Look[] = [
 ];
 
 export const feeOf = (look: Look) => look.pieces.reduce((sum, [, price]) => sum + price, 0);
-export const lookBySlug = (slug: string | undefined) => LOOKS.find((l) => l.slug === slug) ?? LOOKS[1];
+export const lookBySlug = (slug: string) => LOOKS.find((l) => l.slug === slug);
 
 // Each shop's code is the middle of its hire refs, e.g. LH-HAL-0142.
 export const SHOP_CODES: Record<string, string> = {
@@ -91,3 +96,6 @@ export function itemOf(itemRef: string): Item | null {
 }
 
 export const itemName = (itemRef: string) => itemOf(itemRef)?.name ?? itemRef;
+
+// The judges' sample photos in public/judge/blazer show this look, so only its hires may use them.
+export const takesSamplePhotos = (itemRef: string) => itemOf(itemRef)?.look?.slug === 'blazer';

@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { RenterPage } from '@/app/(lab)/chrome';
-import { itemName } from '@/lib/catalogue';
+import { itemName, takesSamplePhotos } from '@/lib/catalogue';
 import { db } from '@/lib/db';
 import { Capture } from './capture';
 
@@ -29,6 +29,7 @@ export default async function CapturePage({ params }: PageProps<'/c/[hireRef]/[s
         hireRef={hireRef}
         stage={stage}
         itemName={itemName(hire.itemRef)}
+        samples={takesSamplePhotos(hire.itemRef)}
         stored={Object.fromEntries(hire.photos.map((p) => [p.angle, { id: p.id, at: p.serverAt.toISOString() }]))}
         locked={lockedReason(hire.status, stage)}
       />

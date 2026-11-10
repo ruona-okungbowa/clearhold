@@ -36,7 +36,7 @@ export async function buildEvidencePack(hireRef: string) {
       dueBackAt: hire.dueBackAt.toISOString(),
       returnedAt: hire.returnedAt?.toISOString() ?? null,
     },
-    photos: photos.map((p) => ({ id: p.id, stage: p.stage, angle: p.angle, sha256: p.sha256, serverAt: p.serverAt.toISOString() })),
+    photos: photos.map((p) => ({ id: p.id, stage: p.stage, angle: p.angle, sha256: p.sha256, serverAt: p.serverAt.toISOString(), sample: p.pathname.includes('-sample-') })),
     findings: findings.map((f) => ({
       id: f.id,
       angle: f.angle,

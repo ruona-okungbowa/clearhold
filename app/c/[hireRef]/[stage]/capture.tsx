@@ -15,17 +15,20 @@ import { ANGLES } from '@/lib/schedule';
 
 type Stage = 'pickup' | 'return';
 export type Taken = Record<string, { id: string; at: string }>;
+type Angle = (typeof ANGLES)[number];
 
 export function Capture({
   hireRef,
   stage,
   itemName,
+  samples,
   stored,
   locked,
 }: {
   hireRef: string;
   stage: Stage;
   itemName: string;
+  samples: boolean;
   stored: Taken;
   locked: string | null;
 }) {
@@ -44,22 +47,38 @@ export function Capture({
   const ret = stage === 'return';
   const photo = (id: string) => `/api/photos/${id}`;
 
-  async function store(f: File) {
-    const at = angle;
+  async function store(f: File, at: Angle = angle, sample = false) {
     setBusy(at.id);
     setError(null);
     try {
-      const saved = await uploadPhoto({ hireRef, stage, angle: at.id }, f, `${at.id}.jpg`);
-      const next = { ...taken, [at.id]: { id: saved.id, at: saved.serverAt } };
-      setTaken(next);
+      const saved = await uploadPhoto({ hireRef, stage, angle: at.id, ...(sample && { sample: '1' }) }, f, `${at.id}.jpg`);
+      setTaken((t) => ({ ...t, [at.id]: { id: saved.id, at: saved.serverAt } }));
       setFlash((n) => n + 1);
-      const i = ANGLES.findIndex((a, j) => j > now && !next[a.id]);
+      const i = ANGLES.findIndex((a, j) => j > now && a.id !== at.id && !taken[a.id]);
       if (i !== -1) setNow(i);
+      return true;
     } catch (err) {
       setError(`${at.short} not stored: ${err instanceof Error ? err.message : err}. Take it again.`);
+      return false;
     } finally {
       setBusy(null);
     }
+  }
+
+  // Into the shutter's own path, so the hash, server time and inspector treat it like any photo.
+  async function takeSample(at: Angle) {
+    const res = await fetch(`/judge/blazer/${stage}/${at.id}.jpg`).catch(() => null);
+    if (!res?.ok) {
+      setError(`${at.short} sample could not be loaded. Try again.`);
+      return false;
+    }
+    const blob = await res.blob();
+    return store(new File([blob], `${at.id}.jpg`, { type: blob.type }), at, true);
+  }
+
+  async function takeAllSamples() {
+    for (const a of ANGLES) if (!(await takeSample(a))) return;
+    setNow(ANGLES.length - 1);
   }
 
   const send = () =>
@@ -115,6 +134,22 @@ export function Capture({
           <button type="button" className={`${w.block} ${w.wide}`} disabled={!all || sending || busy !== null} onClick={send}>
             {sending ? (ret ? 'Checking the photos…' : 'Taking the fee…') : ret ? 'Send 6 photos and check them' : 'Send 6 photos and hand over'}
           </button>
+        )}
+        {samples && !locked && (
+          <div className={s.sampleBtns}>
+            <button
+              type="button"
+              className={`${w.ghost} ${w.wide}`}
+              disabled={busy !== null || sending}
+              aria-label={`Use sample photo (for judges): ${angle.short}`}
+              onClick={() => takeSample(angle)}
+            >
+              Use sample photo (for judges)
+            </button>
+            <button type="button" className={`${w.ghost} ${w.wide}`} disabled={busy !== null || sending} onClick={takeAllSamples}>
+              Use all six sample photos
+            </button>
+          </div>
         )}
         {error && (
           <p role="alert" className={w.sErr}>

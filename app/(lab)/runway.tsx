@@ -1,6 +1,6 @@
 'use client';
 
-// Six looks on a turning 3D ring. Bodies are positioned by writing styles directly each frame (no re-render).
+// The looks on a turning 3D ring, starting at the featured first look. Bodies are positioned by writing styles directly each frame (no re-render).
 import Image from 'next/image';
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from 'react';
@@ -224,7 +224,7 @@ export function Runway() {
               alt=""
               fill
               sizes="(max-width: 900px) 40vw, 18vw"
-              loading="eager" // bodies 6–11 reuse the same six URLs, and body 11 is beside the front at load
+              loading="eager" // the second lap of bodies reuses the same URLs, and the last body is beside the front at load
               draggable={false}
             />
           </div>
@@ -250,7 +250,7 @@ export function Runway() {
         <p className={l.lookTotal}>
           The whole look, for the weekend <strong className={w.num}>£{total}</strong>
         </p>
-        <Link href={`/look?l=${look.slug}`} className={w.block}>
+        <Link href={`/looks/${look.slug}`} className={w.block}>
           Hire this look
         </Link>
         <div className={l.controls}>

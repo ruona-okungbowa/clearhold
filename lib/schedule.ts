@@ -19,7 +19,7 @@ export const ITEMS: Record<
   { name: string; branch: string; feeGBP: number; depositGBP: number; hireDays: number }
 > = {
   'BLZ-NAVY-40R': {
-    name: 'Navy wool blazer, 40R',
+    name: 'Brown wool blazer, 40R',
     branch: 'Halifax',
     feeGBP: 28,
     depositGBP: 60,
