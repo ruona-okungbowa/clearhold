@@ -115,6 +115,24 @@ The renter says the stain was already present at collection and attaches a photo
 
 The related evidence page is available at [`/disputes/LH-HAL-0101`](https://clearhold-gamma.vercel.app/disputes/LH-HAL-0101). It includes the evidence-pack download and a grounded draft-response action. Nothing is sent automatically from that page.
 
+### Answering a PayPal dispute
+
+The AI drafts; a named person clicks; only then does our code call PayPal. On `/disputes/<hireRef>`:
+
+- **Send to PayPal** (only while PayPal shows `WAITING_FOR_SELLER_RESPONSE` and offers its `provide_evidence` action): edit the draft, pick up to 10 JPEG photos, then confirm the exact notes, files and capture id. It goes as evidence type `OTHER`, the type PayPal lists for "item not as described". One send per round of PayPal's review.
+- **Accept claim and refund £X**: X is PayPal's dispute amount, never typed, and never more than the capture. After a confirm step, PayPal refunds the buyer and the hire is marked refunded via dispute.
+- **Refresh from PayPal**, and the webhook's `CUSTOMER.DISPUTE.CREATED`/`UPDATED`/`RESOLVED` events, update our case status only.
+
+Staff sign in with their name, and every response records it.
+
+To open a sandbox dispute to test against (the hire must have been paid with a sandbox **Personal** PayPal account; a guest card payment can't be disputed from a buyer account):
+
+1. Book a look at `/looks`. At checkout, choose **PayPal** and log in as a sandbox Personal account.
+2. Hand the hire over in Clearhold, so the hire fee is captured.
+3. Sign in to `https://www.sandbox.paypal.com` as that buyer, open **Activity**, choose the payment, then **Report a problem** → **Item not as described**, and submit.
+4. In Clearhold, press **Refresh from PayPal** on `/disputes`: the dispute appears matched to the hire by its capture id.
+5. PayPal often opens a dispute as an inquiry with no `provide_evidence` action. Until PayPal asks the seller for evidence, Send stays off and the page says why.
+
 ## What was built during the hackathon
 
 The repository began from the PayPal/AG Grid hackathon starter structure: a Next.js application, PayPal integration scaffolding, AG Grid/AG Studio dependencies and the initial dashboard-oriented project setup.

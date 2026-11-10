@@ -1,6 +1,7 @@
 // Desk-agent evals, E19-E20b: the desk agent's own instructions through the AI route (app/api/ai/responses POST,
 // called in-process with a staff cookie, so the same key, model and token cap, and the adapter's own translation),
 // with holds_at_risk run for real over the database. E21: the dispute draft (lib/evidence-pack.ts) from a real hire's evidence pack.
+// E24: a draft naming an amount the pack doesn't hold is refused by validateDraft, and the send path stops on it before any PayPal call.
 //   npm run agent-evals          exits non-zero on any failure
 //   npm run agent-evals -- E21   only the evals whose id starts with E21
 //
@@ -13,6 +14,7 @@ import type { AgAiConversationItem } from 'ag-studio';
 import { POST } from '../app/api/ai/responses/route';
 import { DESK_INSTRUCTIONS, HOLDS_AT_RISK, holdsAtRisk } from '../app/control-room/desk-agent';
 import { db } from '../lib/db';
+import { acceptGate, DisputeError, evidenceGate, sendEvidence } from '../lib/disputes';
 import { buildEvidencePack, draftResponse, validateDraft, type Draft } from '../lib/evidence-pack';
 import { STAFF_COOKIE, staffToken } from '../lib/staff';
 import { createDecoder, toAnthropicMessages } from '../lib/studio/anthropic-adapter';
@@ -79,7 +81,7 @@ const TOOLS = [
 const postToRoute = (body: unknown, headers?: HeadersInit) => POST(new Request('http://localhost/api/ai/responses', { method: 'POST', headers, body: JSON.stringify(body) }));
 
 async function turn(messages: unknown[]) {
-  const res = await postToRoute({ system: DESK_INSTRUCTIONS, messages, tools: TOOLS, tool_choice: { type: 'auto' } }, { Cookie: `${STAFF_COOKIE}=${await staffToken()}` });
+  const res = await postToRoute({ system: DESK_INSTRUCTIONS, messages, tools: TOOLS, tool_choice: { type: 'auto' } }, { Cookie: `${STAFF_COOKIE}=${await staffToken('Agent Evals')}` });
   if (!res.ok) throw new Error(`AI route ${res.status}: ${(await res.json()).error?.message}`);
   const decoder = createDecoder();
   for (const line of (await res.text()).split('\n')) if (line.trim()) decoder.read(JSON.parse(line));
@@ -158,6 +160,47 @@ async function main() {
       !whyNone?.includes('cites nothing') && `validator said ${JSON.stringify(whyNone)} for a paragraph with no citation`,
     ].filter((f): f is string => Boolean(f)));
     console.log(`E21c: Draft rejected: ${whyC}`);
+  }
+
+  // E24: £999.99 is in no finding, clause, approval, capture or hold. validateDraft names it, and sendEvidence (the code
+  // behind "Confirm and send") refuses with that reason while a fetch spy sees no request to PayPal.
+  if (runs('E24')) {
+    const pack = await buildEvidencePack(E21_HIRE);
+    const bad: Draft['paragraphs'] = [{ text: 'The repair to the cuff costs £999.99.', citations: [{ kind: 'photo', id: pack.photos[0].id }] }];
+    const why = validateDraft(pack, { paragraphs: bad, amountsGBP: [] });
+    const realFetch = globalThis.fetch;
+    let paypalCalls = 0;
+    globalThis.fetch = (input, init) => {
+      if (String(input instanceof Request ? input.url : input).includes('paypal.com')) paypalCalls++;
+      return realFetch(input, init);
+    };
+    const sent = await sendEvidence(E21_HIRE, 'PP-D-E24', bad, [], 'Agent Evals').then(
+      () => 'sent',
+      (err: unknown) => (err instanceof DisputeError ? err.message : `threw ${err}`),
+    );
+    globalThis.fetch = realFetch;
+    record('E24', 'send a draft citing £999.99', [
+      !why?.includes('£999.99') && `validateDraft said ${JSON.stringify(why)}`,
+      !sent.startsWith('Draft rejected: ') && `sendEvidence ended with ${JSON.stringify(sent)}`,
+      paypalCalls > 0 && `${paypalCalls} PayPal call(s) before the refusal`,
+    ].filter(isFailure));
+    console.log(`E24: ${sent}; PayPal calls: ${paypalCalls}`);
+  }
+
+  // E24b: the gates on made-up disputes. Evidence needs PayPal's provide_evidence link; a refund never exceeds the capture.
+  if (runs('E24')) {
+    const links = (...rels: string[]) => rels.map((rel) => ({ rel, href: '' }));
+    const refund = { accept_claim: { accept_claim_types: ['REFUND'] } };
+    const d = (over: object) => ({ dispute_id: 'PP-D-1', status: 'WAITING_FOR_SELLER_RESPONSE', dispute_amount: { value: '24.00', currency_code: 'GBP' }, allowed_response_options: refund, ...over });
+    record('E24b', 'evidence and refund gates', [
+      evidenceGate(d({ links: links('provide_evidence') })).open !== true && 'evidence refused with a provide_evidence link',
+      evidenceGate(d({ links: links('accept_claim') })).open !== false && 'evidence allowed with no provide_evidence link',
+      evidenceGate(d({ status: 'UNDER_REVIEW', links: links('provide_evidence') })).open !== false && 'evidence allowed while PayPal reviews',
+      acceptGate(d({ links: links('accept_claim') }), '24.00').open !== true && 'refund of the captured amount refused',
+      acceptGate(d({ links: links('accept_claim') }), '23.99').open !== false && 'refund above the capture allowed',
+      acceptGate(d({ links: links('accept_claim'), dispute_amount: { value: '10.00', currency_code: 'USD' } }), '24.00').open !== false && 'non-GBP refund allowed',
+      acceptGate(d({ status: 'RESOLVED', links: links('accept_claim') }), '24.00').open !== false && 'refund allowed on a resolved dispute',
+    ].filter(isFailure));
   }
 
   // E20b: the route turns away a caller with no staff cookie, before any model call.
