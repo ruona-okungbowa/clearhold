@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { pence } from './approval';
 import { audit } from './audit';
 import { db } from './db';
-import { buildEvidencePack, validateDraft, type Draft } from './evidence-pack';
+import { buildEvidencePack, validateDraft, type Draft, type EvidencePack } from './evidence-pack';
 import { canDo, get, getDispute, listDisputes, post, postMultipart, PayPalApiError, type DisputeDetails } from './paypal';
 
 export class DisputeError extends Error {
@@ -73,13 +73,24 @@ export type DisputeView = {
   id: string;
   status: string;
   reason: string | null;
+  stage: string | null;
+  openedAt: string | null;
+  respondBy: string | null;
   amountGBP: string | null;
   captureId: string;
   capturedGBP: string;
   live: boolean; // false: PayPal unreachable, showing our last copy
+  // The buyer's own words, as PayPal holds them: shown quoted, never fed to the draft.
+  buyerSays: { at: string | null; text: string }[];
   evidence: Gate;
   accept: Gate;
+  offer: Gate;
 };
+
+const buyerSays = (d: DisputeDetails) => [
+  ...(d.disputed_transactions?.flatMap((t) => t.items ?? []).flatMap((i) => (i.notes ? [{ at: d.create_time ?? null, text: i.notes }] : [])) ?? []),
+  ...(d.messages?.filter((m) => m.posted_by === 'BUYER' && m.content).map((m) => ({ at: m.time_posted ?? null, text: m.content! })) ?? []),
+];
 
 export function evidenceGate(d: DisputeDetails): Gate {
   if (d.status !== 'WAITING_FOR_SELLER_RESPONSE') return { open: false, why: `PayPal shows ${d.status}: evidence is only taken while PayPal waits for our response` };
@@ -94,6 +105,16 @@ export function acceptGate(d: DisputeDetails, capturedGBP: string): Gate {
   if (!d.allowed_response_options?.accept_claim?.accept_claim_types?.includes('REFUND')) return { open: false, why: 'PayPal does not allow a full refund here' };
   if (!amount || amount.currency_code !== 'GBP') return { open: false, why: 'PayPal gives no GBP dispute amount' };
   if (pence(amount.value) > pence(capturedGBP)) return { open: false, why: `PayPal’s £${amount.value} is more than the £${capturedGBP} we captured` };
+  return { open: true };
+}
+
+// A part refund offered in the inquiry stage. The amount is a person's, so makeOffer checks it is above £0 and below
+// both PayPal's dispute amount and our capture.
+export function offerGate(d: DisputeDetails): Gate {
+  if (d.status === 'RESOLVED') return { open: false, why: 'PayPal has resolved this dispute' };
+  if (!canDo(d, 'make_offer')) return { open: false, why: 'PayPal does not offer making an offer right now' };
+  if (!d.allowed_response_options?.make_offer?.offer_types?.includes('REFUND')) return { open: false, why: 'PayPal does not allow a refund offer here' };
+  if (d.dispute_amount?.currency_code !== 'GBP') return { open: false, why: 'PayPal gives no GBP dispute amount' };
   return { open: true };
 }
 
@@ -113,15 +134,62 @@ export async function disputesFor(hireRef: string): Promise<DisputeView[]> {
         id: c.id,
         status: d?.status ?? c.status,
         reason: d?.reason ?? c.reason,
+        stage: d?.dispute_life_cycle_stage ?? null,
+        openedAt: d?.create_time ?? null,
+        respondBy: d?.seller_response_due_date ?? null,
+        buyerSays: d ? buyerSays(d) : [],
         amountGBP: d?.dispute_amount?.value ?? c.amountGBP?.toFixed(2) ?? null,
         captureId: c.captureId,
         capturedGBP,
         live: Boolean(d),
         evidence: d ? evidenceGate(d) : closed,
         accept: d ? acceptGate(d, capturedGBP) : closed,
+        offer: d ? offerGate(d) : closed,
       };
     }),
   );
+}
+
+// --- Records summary -------------------------------------------------------------------------------------
+
+// The records PayPal can't take as files (it takes only JPG, GIF, PNG and PDF), as one line each for the note. Built by
+// code from the evidence pack, so every amount and id is ours; the browser sends only which ids to include.
+export type RecordLine = { id: string; label: string; detail: string; line: string };
+
+export function recordLines(pack: EvidencePack): RecordLine[] {
+  const gbp = (n: number) => `£${n.toFixed(2)}`;
+  const approval = pack.approvals.at(-1);
+  return [
+    ...pack.captures.map((c) => ({
+      id: `capture:${c.id}`,
+      label: 'PayPal capture',
+      detail: `${c.id} · ${gbp(c.amountGBP)} · ${c.purpose}`,
+      line: `PayPal capture ${c.id}: ${gbp(c.amountGBP)}, ${c.purpose}.`,
+    })),
+    ...(approval
+      ? [
+          {
+            id: `approval:${approval.id}`,
+            label: 'Signed approval record',
+            detail: `${approval.approver} · up to ${gbp(approval.maxGBP)} · ${approval.signatureVerifies ? 'signature verifies' : 'signature does not verify'}`,
+            line: `A member of staff signed an approval for up to ${gbp(approval.maxGBP)}; the signature ${approval.signatureVerifies ? 'verifies' : 'does not verify'}.`,
+          },
+        ]
+      : []),
+    ...pack.clauses.map((c) => ({
+      id: `clause:${c.id}`,
+      label: 'Price list the renter agreed to',
+      detail: `${c.id} · ${c.text}${c.chargeable ? ` · ${gbp(c.lowGBP)}–${gbp(c.highGBP)}` : ''}`,
+      line: `Price list clause ${c.id}: ${c.text}${c.chargeable ? `, ${gbp(c.lowGBP)} to ${gbp(c.highGBP)}` : ', never charged'}.`,
+    })),
+    { id: 'terms', label: 'Hold terms', detail: pack.hold.terms, line: `Booking terms: ${pack.hold.terms}.` },
+    {
+      id: 'timeline',
+      label: 'Timeline and audit trail',
+      detail: `${pack.timeline.length} events · PayPal debug ids kept`,
+      line: `Our audit trail holds ${pack.timeline.length} events for this hire, each PayPal call with its debug id.`,
+    },
+  ];
 }
 
 // --- Evidence ------------------------------------------------------------------------------------------
@@ -136,7 +204,7 @@ export type EvidencePlan = {
 };
 
 // Builds exactly what provide-evidence will send, or refuses. The confirm step shows this; the send rebuilds it the same way.
-export async function planEvidence(hireRef: string, disputeId: string, paragraphs: Draft['paragraphs'], photoIds: string[]) {
+export async function planEvidence(hireRef: string, disputeId: string, paragraphs: Draft['paragraphs'], photoIds: string[], recordIds: string[] = []) {
   const pack = await buildEvidencePack(hireRef);
   const why = validateDraft(pack, { paragraphs, amountsGBP: [] });
   if (why) throw new DisputeError(`Draft rejected: ${why}`);
@@ -147,7 +215,13 @@ export async function planEvidence(hireRef: string, disputeId: string, paragraph
   const gate = evidenceGate(d);
   if (!gate.open) throw new DisputeError(gate.why);
 
-  const notes = `${paragraphs.map((p) => p.text.trim()).join('\n\n')}\n\nPayPal capture ${match.capture.id} · Ledgerton Hire ref ${hireRef}`;
+  const wanted = new Set(recordIds);
+  const records = recordLines(pack).filter((r) => wanted.has(r.id));
+  const notes = [
+    paragraphs.map((p) => p.text.trim()).join('\n\n'),
+    ...(records.length ? [`Records:\n${records.map((r) => `- ${r.line}`).join('\n')}`] : []),
+    `PayPal capture ${match.capture.id} · Ledgerton Hire ref ${hireRef}`,
+  ].join('\n\n');
   if (notes.length > NOTES_MAX) throw new DisputeError(`The notes are ${notes.length} characters; PayPal takes at most ${NOTES_MAX}`);
   // Renter personal data stays with us: PayPal already holds the buyer's account, so nothing about them goes in the notes.
   const { renterName } = await db.hire.findUniqueOrThrow({ where: { hireRef }, select: { renterName: true } });
@@ -191,8 +265,8 @@ const sameSend = (row: { notes: string; photoIds: string[] }, plan: EvidencePlan
 
 // The send. A row is written as "sending" first: its unique (disputeId, stage) refuses a second answer to the same round,
 // and a send whose outcome we never saw can only be retried unchanged, under the same PayPal-Request-Id.
-export async function sendEvidence(hireRef: string, disputeId: string, paragraphs: Draft['paragraphs'], photoIds: string[], sentBy: string) {
-  const { plan, photos } = await planEvidence(hireRef, disputeId, paragraphs, photoIds);
+export async function sendEvidence(hireRef: string, disputeId: string, paragraphs: Draft['paragraphs'], photoIds: string[], recordIds: string[], sentBy: string) {
+  const { plan, photos } = await planEvidence(hireRef, disputeId, paragraphs, photoIds, recordIds);
   const existing = await db.disputeResponse.findUnique({ where: { disputeId_stage: { disputeId, stage: plan.stage } } });
   if (existing?.status === 'sent') throw new DisputeError(`${existing.sentBy} already answered this round; PayPal is still reviewing it`);
   if (existing?.status === 'sending' && !sameSend(existing, plan))
@@ -291,6 +365,62 @@ export async function acceptClaim(hireRef: string, disputeId: string, shownGBP: 
       if (c.status) await db.capture.update({ where: { id: match.capture.id }, data: { status: c.status } });
     })
     .catch((err) => console.error('[disputes] capture read failed', err));
+  await getDispute(disputeId).then(recordCase, () => null);
+  return { debugId: res.debugId, status: res.status, amountGBP };
+}
+
+// --- Offer part back -----------------------------------------------------------------------------------
+
+// A refund offer the buyer can accept (PayPal then refunds it) or turn down. The amount is typed by a person, so it must be
+// above £0, below PayPal's dispute amount (all of it is accepting the claim) and no more than our capture.
+export async function makeOffer(hireRef: string, disputeId: string, offerGBP: string, sentBy: string) {
+  const d = await getDispute(disputeId);
+  const match = await captureOf(d, hireRef);
+  if (!match) throw new DisputeError(`Dispute ${disputeId} is not on a capture of ${hireRef}`);
+  const gate = offerGate(d);
+  if (!gate.open) throw new DisputeError(gate.why);
+  const disputedGBP = d.dispute_amount!.value;
+  const capturedGBP = match.capture.amountGBP.toFixed(2);
+  const offer = pence(offerGBP);
+  if (offer <= 0) throw new DisputeError('An offer must be more than £0');
+  if (offer >= pence(disputedGBP)) throw new DisputeError(`An offer must be less than the £${disputedGBP} disputed; to refund all of it, accept the claim`);
+  if (offer > pence(capturedGBP)) throw new DisputeError(`An offer can’t be more than the £${capturedGBP} we captured`);
+  const amountGBP = (offer / 100).toFixed(2);
+
+  // One offer per round; a retry of an unanswered one must be the same amount, under the same request id.
+  const stage = `offer:${d.seller_response_due_date ?? 'none'}`;
+  const existing = await db.disputeResponse.findUnique({ where: { disputeId_stage: { disputeId, stage } } });
+  if (existing?.status === 'sent') throw new DisputeError(`${existing.sentBy} already made an offer in this round`);
+  if (existing?.status === 'sending' && existing.amountGBP?.toFixed(2) !== amountGBP)
+    throw new DisputeError(`${existing.sentBy}’s offer of £${existing.amountGBP?.toFixed(2)} never got an answer: refresh from PayPal, or retry the same amount`);
+  const notes = `Ledgerton Hire offers a refund of £${amountGBP} of the £${disputedGBP} disputed.`;
+  const requestId = existing?.status === 'sending' ? existing.requestId : `offer-${randomUUID()}`;
+  const data = { sentBy, sentAt: new Date(), notes, photoIds: [], amountGBP, status: 'sending', paypalDebugId: null, requestId };
+  const row = existing
+    ? await db.disputeResponse.update({ where: { id: existing.id }, data })
+    : await db.disputeResponse.create({ data: { ...data, disputeId, hireRef, kind: 'offer', stage } });
+
+  let res;
+  try {
+    res = await post('dispute.makeOffer', `/v1/customer/disputes/${encodeURIComponent(disputeId)}/make-offer`, requestId, {
+      note: notes,
+      offer_amount: { currency_code: 'GBP', value: amountGBP },
+      offer_type: 'REFUND',
+    });
+  } catch (err) {
+    if (err instanceof PayPalApiError && err.status < 500)
+      await db.disputeResponse.update({ where: { id: row.id }, data: { status: 'failed', paypalDebugId: err.debugId } });
+    throw err;
+  }
+  await db.disputeResponse.update({ where: { id: row.id }, data: { status: 'sent', paypalDebugId: res.debugId } });
+  await audit({
+    actor: 'human',
+    type: 'dispute.offer.sent',
+    summary: `${sentBy} offered the buyer £${amountGBP} of the £${disputedGBP} disputed on ${disputeId} (capture ${match.capture.id})`,
+    status: res.status,
+    paypalDebugId: res.debugId,
+    idempotencyKey: requestId,
+  });
   await getDispute(disputeId).then(recordCase, () => null);
   return { debugId: res.debugId, status: res.status, amountGBP };
 }

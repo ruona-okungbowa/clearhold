@@ -625,3 +625,132 @@ ul.cites {
     min-width: 720px;
   }
 }
+
+/* 11.6 PayPal dispute */
+ol.stepper.stepper5 {
+  grid-template-columns: repeat(5, 1fr);
+}
+.daysLeft {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--l-muted);
+  font-size: 14px;
+}
+.daysLeft strong {
+  font-size: 30px;
+  color: var(--amber);
+  font-variant-numeric: tabular-nums;
+}
+.quote {
+  border-left: 4px solid var(--l-line);
+  background: var(--l-ground);
+  padding: 10px 14px;
+  margin: 0;
+  font-size: 15px;
+}
+ul.evList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.evList li {
+  display: grid;
+  grid-template-columns: 24px 56px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--l-line);
+}
+.evList label {
+  display: contents;
+}
+.evList input {
+  width: 20px;
+  height: 20px;
+  accent-color: var(--l-blue);
+}
+.evThumb {
+  width: 56px;
+  height: 56px;
+  object-fit: cover;
+  background: var(--l-ground);
+}
+.evDoc {
+  width: 56px;
+  height: 56px;
+  display: grid;
+  place-items: center;
+  background: var(--l-ground);
+  color: var(--l-muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+}
+.evList small {
+  display: block;
+  color: var(--l-muted);
+  font-size: 13px;
+}
+.evMeta {
+  color: var(--l-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.evFoot {
+  display: flex;
+  justify-content: space-between;
+  color: var(--l-muted);
+  font-size: 13px;
+  padding-top: 10px;
+}
+fieldset.answerOpts {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.answerOpts label {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--l-line);
+  background: #fff;
+  cursor: pointer;
+}
+.answerOpts label:has(input:checked) {
+  border: 2px solid var(--l-blue);
+  background: #eaf2f8;
+}
+.answerOpts label:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.answerOpts strong {
+  display: block;
+  font-size: 15px;
+}
+.answerOpts small {
+  color: var(--l-muted);
+  font-size: 13px;
+}
+ul.rules {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 6px;
+  color: var(--l-muted);
+  font-size: 14px;
+}
+.rules li::before {
+  content: '— ';
+}
+@media (max-width: 1100px) {
+  ol.stepper.stepper5 {
+    grid-template-columns: 1fr;
+  }
+}

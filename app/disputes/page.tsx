@@ -4,7 +4,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { connection } from 'next/server';
-import { StaffPage } from '@/app/(lab)/chrome';
+import { StaffPage } from '@/app/(lab)/staff-page';
 import st from '@/app/(lab)/staff.module.css';
 import w from '@/app/(lab)/wire.module.css';
 import { db } from '@/lib/db';

@@ -174,7 +174,7 @@ async function main() {
       if (String(input instanceof Request ? input.url : input).includes('paypal.com')) paypalCalls++;
       return realFetch(input, init);
     };
-    const sent = await sendEvidence(E21_HIRE, 'PP-D-E24', bad, [], 'Agent Evals').then(
+    const sent = await sendEvidence(E21_HIRE, 'PP-D-E24', bad, [], [], 'Agent Evals').then(
       () => 'sent',
       (err: unknown) => (err instanceof DisputeError ? err.message : `threw ${err}`),
     );

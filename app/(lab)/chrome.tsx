@@ -5,7 +5,6 @@ import "@fontsource/ibm-plex-sans/600.css";
 import "@fontsource/ibm-plex-sans/700.css";
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { signOut } from "@/app/staff-login/actions";
 import w from "./wire.module.css";
 
 export type ChipKind = "stAi" | "stHuman" | "stLook" | "stOk" | "stPlain";
@@ -84,46 +83,12 @@ export const staffUrl = {
   dispute: (ref: string) => `/disputes/${ref}`,
 };
 
-const STAFF_NAV = [
+export const STAFF_NAV = [
   { id: "control-room", label: "Control room", href: staffUrl.controlRoom },
   { id: "hire", label: "Hires", href: staffUrl.openHires },
   { id: "disputes", label: "Disputes", href: staffUrl.disputes },
 ] as const;
 
-export function StaffPage({ current, children }: { current?: (typeof STAFF_NAV)[number]["id"]; children: ReactNode }) {
-  return (
-    <div className={w.staff}>
-      <a href="#main" className={w.skip}>
-        Skip to content
-      </a>
-      <div className={w.sBar}>
-        <Link href={staffUrl.controlRoom} className={w.sBrand}>
-          Clearhold<span>Ledgerton Hire</span>
-        </Link>
-        <nav aria-label="Staff">
-          <ul>
-            {STAFF_NAV.map(({ id, label, href }) => (
-              <li key={id}>
-                <Link href={href} aria-current={current === id ? "page" : undefined}>
-                  {label}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </nav>
-        <div className={w.sWho}>
-          Signed in as staff{" "}
-          <form action={signOut} className={w.inlineForm}>
-            <button type="submit">Sign out</button>
-          </form>
-        </div>
-      </div>
-      <main id="main" className={w.sMain}>
-        {children}
-      </main>
-    </div>
-  );
-}
 
 // Money as the screens show it.
 export const gbp = (n: number) => `£${n.toFixed(2)}`;
