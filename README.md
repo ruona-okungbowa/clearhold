@@ -119,7 +119,8 @@ The related evidence page is available at [`/disputes/LH-HAL-0101`](https://clea
 
 The AI drafts; a named person clicks; only then does our code call PayPal. On `/disputes/<hireRef>`:
 
-- **Send to PayPal** (only while PayPal shows `WAITING_FOR_SELLER_RESPONSE` and offers its `provide_evidence` action): edit the draft, pick up to 10 JPEG photos, then confirm the exact notes, files and capture id. It goes as evidence type `OTHER`, the type PayPal lists for "item not as described". One send per round of PayPal's review.
+- **Send to PayPal** (only while PayPal shows `WAITING_FOR_SELLER_RESPONSE` and offers its `provide_evidence` action): edit the draft, pick up to 10 JPEG photos and which of our records (capture, signed approval, price list, hold terms, audit trail) go in the note as one line each, then confirm the exact notes, files and capture id. PayPal takes only JPG, GIF, PNG and PDF files, so the records travel in the note, written by code from the evidence pack. It goes as evidence type `OTHER`, the type PayPal lists for "item not as described". One send per round of PayPal's review.
+- **Offer part back** (only while PayPal offers `make_offer`, in the inquiry stage): a person types the amount; the server refuses anything not above £0, below PayPal's dispute amount and within the capture. If the buyer accepts, PayPal refunds it.
 - **Accept claim and refund £X**: X is PayPal's dispute amount, never typed, and never more than the capture. After a confirm step, PayPal refunds the buyer and the hire is marked refunded via dispute.
 - **Refresh from PayPal**, and the webhook's `CUSTOMER.DISPUTE.CREATED`/`UPDATED`/`RESOLVED` events, update our case status only.
 

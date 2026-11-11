@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 import { connection } from 'next/server';
-import { staffUrl, StaffPage } from '@/app/(lab)/chrome';
+import { staffUrl } from '@/app/(lab)/chrome';
+import { StaffPage } from '@/app/(lab)/staff-page';
 import type { EvidenceFinding } from '@/components/studio/EvidencePair';
 import { aiEnabled, aiModels } from '@/lib/ai';
 import { SHOPS } from '@/lib/catalogue';

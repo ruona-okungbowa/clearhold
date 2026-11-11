@@ -19,20 +19,28 @@ function key() {
 // Letters, spaces, hyphens, apostrophes and full stops: a person's name, nothing that reads as markup or a path.
 export const STAFF_NAME = /^[\p{L}][\p{L} .'-]{0,58}[\p{L}.]$/u;
 
-export const staffToken = (name: string) => {
+// `shop` is the branch picked at sign-in, shown beside the name; it grants nothing.
+export const staffToken = (name: string, shop?: string) => {
   if (!STAFF_NAME.test(name)) throw new Error('A staff name is 2 to 60 letters');
-  return new SignJWT().setProtectedHeader({ alg: 'HS256' }).setAudience(AUDIENCE).setSubject(name).setIssuedAt().setExpirationTime('12h').sign(key());
+  return new SignJWT(shop ? { shop } : {}).setProtectedHeader({ alg: 'HS256' }).setAudience(AUDIENCE).setSubject(name).setIssuedAt().setExpirationTime('12h').sign(key());
 };
 
-// The signed-in name, or null. A cookie from before names were asked for has no subject and reads as signed out.
-export async function verifyStaff(token: string | undefined): Promise<string | null> {
+export type StaffWho = { name: string; shop: string | null };
+
+// The signed-in person, or null. A cookie from before names were asked for has no subject and reads as signed out.
+export async function staffWho(token: string | undefined): Promise<StaffWho | null> {
   if (!token) return null;
   const k = key(); // a missing secret should fail loudly, not read as signed out
   return jwtVerify(token, k, { audience: AUDIENCE, algorithms: ['HS256'] }).then(
-    ({ payload }) => (typeof payload.sub === 'string' && STAFF_NAME.test(payload.sub) ? payload.sub : null),
+    ({ payload }) =>
+      typeof payload.sub === 'string' && STAFF_NAME.test(payload.sub) ? { name: payload.sub, shop: typeof payload.shop === 'string' ? payload.shop : null } : null,
     () => null,
   );
 }
+
+export const verifyStaff = async (token: string | undefined) => (await staffWho(token))?.name ?? null;
+
+export const signedInStaff = async () => staffWho((await cookies()).get(STAFF_COOKIE)?.value);
 
 export const isStaff = async () => verifyStaff((await cookies()).get(STAFF_COOKIE)?.value);
 

@@ -183,10 +183,11 @@ export type Dispute = {
 // The detail fields the list leaves out; seller_transaction_id is our capture id. `links` holds the actions PayPal
 // allows right now (provide_evidence, accept_claim, ...): no link, no action.
 export type DisputeDetails = Dispute & {
-  disputed_transactions?: { seller_transaction_id?: string }[];
+  disputed_transactions?: { seller_transaction_id?: string; items?: { item_name?: string; notes?: string }[] }[];
   links?: { rel: string; href: string; method?: string }[];
   evidences?: { evidence_type?: string; source?: string; date?: string }[];
-  allowed_response_options?: { accept_claim?: { accept_claim_types?: string[] } };
+  messages?: { posted_by?: string; time_posted?: string; content?: string }[];
+  allowed_response_options?: { accept_claim?: { accept_claim_types?: string[] }; make_offer?: { offer_types?: string[] } };
 };
 
 export const canDo = (d: DisputeDetails, rel: string) => Boolean(d.links?.some((l) => l.rel === rel));

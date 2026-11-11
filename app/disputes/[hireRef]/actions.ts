@@ -8,7 +8,7 @@
 import { refresh } from 'next/cache';
 import { z } from 'zod';
 import { audit, auditScope } from '@/lib/audit';
-import { acceptClaim, DisputeError, MAX_FILES, planEvidence, sendEvidence, syncDisputes, type EvidencePlan } from '@/lib/disputes';
+import { acceptClaim, DisputeError, makeOffer, MAX_FILES, planEvidence, sendEvidence, syncDisputes, type EvidencePlan } from '@/lib/disputes';
 import { buildEvidencePack, Draft, draftResponse, validateDraft } from '@/lib/evidence-pack';
 import { PayPalApiError } from '@/lib/paypal';
 import { requireStaff } from '@/lib/staff';
@@ -18,6 +18,7 @@ const DisputeId = z.string().regex(/^[A-Za-z0-9-]{1,64}$/);
 const Paragraphs = Draft.shape.paragraphs.min(1).max(12);
 const PhotoIds = z.array(z.string().min(1).max(40)).max(MAX_FILES);
 const Gbp = z.string().regex(/^\d+(\.\d{1,2})?$/);
+const RecordIds = z.array(z.string().min(1).max(80)).max(30);
 
 type Result<T> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -49,22 +50,34 @@ export async function draftDisputeResponse(hireRef: string): Promise<{ draft: Dr
 }
 
 // The confirm step: validates the edited draft and shows exactly what would go to PayPal. Sends nothing.
-export async function previewEvidence(hireRef: string, disputeId: string, paragraphs: Draft['paragraphs'], photoIds: string[]): Promise<Result<{ plan: EvidencePlan }>> {
+export async function previewEvidence(
+  hireRef: string,
+  disputeId: string,
+  paragraphs: Draft['paragraphs'],
+  photoIds: string[],
+  recordIds: string[] = [],
+): Promise<Result<{ plan: EvidencePlan }>> {
   await requireStaff();
   try {
-    const { plan } = await planEvidence(Ref.parse(hireRef), DisputeId.parse(disputeId), Paragraphs.parse(paragraphs), PhotoIds.parse(photoIds));
+    const { plan } = await planEvidence(Ref.parse(hireRef), DisputeId.parse(disputeId), Paragraphs.parse(paragraphs), PhotoIds.parse(photoIds), RecordIds.parse(recordIds));
     return { ok: true, plan };
   } catch (err) {
     return failure(err);
   }
 }
 
-export async function sendEvidenceToPayPal(hireRef: string, disputeId: string, paragraphs: Draft['paragraphs'], photoIds: string[]): Promise<Result<{ debugId: string | null }>> {
+export async function sendEvidenceToPayPal(
+  hireRef: string,
+  disputeId: string,
+  paragraphs: Draft['paragraphs'],
+  photoIds: string[],
+  recordIds: string[] = [],
+): Promise<Result<{ debugId: string | null }>> {
   const name = await requireStaff();
   const ref = Ref.parse(hireRef);
   const result = await auditScope.run(ref, async () => {
     try {
-      const { debugId } = await sendEvidence(ref, DisputeId.parse(disputeId), Paragraphs.parse(paragraphs), PhotoIds.parse(photoIds), name);
+      const { debugId } = await sendEvidence(ref, DisputeId.parse(disputeId), Paragraphs.parse(paragraphs), PhotoIds.parse(photoIds), RecordIds.parse(recordIds), name);
       return { ok: true as const, debugId };
     } catch (err) {
       await audit({ actor: 'system', type: 'dispute.evidence.refused', summary: `Evidence for ${disputeId} not sent (${name}): ${err instanceof Error ? err.message.slice(0, 200) : err}` });
@@ -84,6 +97,23 @@ export async function acceptClaimAndRefund(hireRef: string, disputeId: string, s
       return { ok: true as const, debugId, amountGBP };
     } catch (err) {
       await audit({ actor: 'system', type: 'dispute.accept.refused', summary: `Accepting ${disputeId} not sent (${name}): ${err instanceof Error ? err.message.slice(0, 200) : err}` });
+      return failure(err);
+    }
+  });
+  refresh();
+  return result;
+}
+
+// A part refund. The amount is the person's; lib/disputes.ts makeOffer bounds it by PayPal's dispute amount and our capture.
+export async function offerPartRefund(hireRef: string, disputeId: string, offerGBP: string): Promise<Result<{ debugId: string | null; amountGBP: string }>> {
+  const name = await requireStaff();
+  const ref = Ref.parse(hireRef);
+  const result = await auditScope.run(ref, async () => {
+    try {
+      const { debugId, amountGBP } = await makeOffer(ref, DisputeId.parse(disputeId), Gbp.parse(offerGBP), name);
+      return { ok: true as const, debugId, amountGBP };
+    } catch (err) {
+      await audit({ actor: 'system', type: 'dispute.offer.refused', summary: `Offer on ${disputeId} not sent (${name}): ${err instanceof Error ? err.message.slice(0, 200) : err}` });
       return failure(err);
     }
   });
